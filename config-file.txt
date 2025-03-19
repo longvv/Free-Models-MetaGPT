@@ -1,0 +1,150 @@
+# Enhanced config.yml for MetaGPT with multiple free models from OpenRouter
+
+OPENROUTER_API_KEY: "your_openrouter_api_key_here"
+
+# Task-based model configuration with primary and backup models
+TASK_MODEL_MAPPING:
+  requirements_analysis:
+    primary:
+      model: "meta-llama/llama-3-8b-instruct"
+      temperature: 0.1
+      max_tokens: 4000
+      context_window: 8000
+      system_prompt: "You are a skilled product manager analyzing project requirements. Extract clear, actionable requirements from user input and organize them in a structured format. Focus on clarity and completeness."
+    backup:
+      model: "mistralai/mistral-7b-instruct"
+      temperature: 0.1
+      max_tokens: 3000
+      context_window: 8000
+      system_prompt: "You are a skilled product manager analyzing project requirements. Extract clear, actionable requirements from user input and organize them in a structured format. Focus on clarity and completeness."
+    validation:
+      schema: "requirements_schema.json"
+      required_sections: ["Functional Requirements", "Non-Functional Requirements", "Constraints"]
+  
+  system_design:
+    primary:
+      model: "mistralai/mistral-7b-instruct"
+      temperature: 0.2
+      max_tokens: 4000
+      context_window: 8000
+      system_prompt: "You are a software architect designing systems. Based on the requirements, create a high-level architecture with components, interfaces, and data flows. Be concise and focus on the most important design decisions."
+    backup:
+      model: "meta-llama/llama-3-8b-instruct"
+      temperature: 0.2
+      max_tokens: 4000
+      context_window: 8000 
+      system_prompt: "You are a software architect designing systems. Based on the requirements, create a high-level architecture with components, interfaces, and data flows. Be concise and focus on the most important design decisions."
+    validation:
+      schema: "design_schema.json"
+      required_sections: ["Architecture Overview", "Components", "Interfaces"]
+  
+  implementation_planning:
+    primary:
+      model: "meta-llama/llama-3-8b-instruct"
+      temperature: 0.1
+      max_tokens: 4000
+      context_window: 8000
+      system_prompt: "You are a technical lead planning software implementation. Break down the architectural design into specific implementation tasks, focusing on technical details and dependencies."
+    backup:
+      model: "microsoft/phi-2"
+      temperature: 0.1
+      max_tokens: 2048
+      context_window: 4096
+      system_prompt: "You are a technical lead planning software implementation. Break down the architectural design into specific implementation tasks, focusing on technical details and dependencies."
+    validation:
+      schema: "implementation_schema.json"
+      required_sections: ["Tasks", "Dependencies", "Timeline"]
+  
+  code_generation:
+    primary:
+      model: "codellama/codellama-7b-instruct"
+      temperature: 0.2
+      max_tokens: 8000
+      context_window: 8000
+      system_prompt: "You are a skilled software engineer. Generate clean, maintainable code based on the implementation plan. Include helpful comments and follow best practices."
+    backup:
+      model: "wizardlm/wizardcoder-python-7b"
+      temperature: 0.2
+      max_tokens: 6000
+      context_window: 6000
+      system_prompt: "You are a skilled software engineer. Generate clean, maintainable code based on the implementation plan. Include helpful comments and follow best practices."
+    validation:
+      syntax_check: true
+      test_generation: true
+      required_patterns: ["def", "class", "import"]
+  
+  code_review:
+    primary:
+      model: "codellama/codellama-7b-instruct"
+      temperature: 0.1
+      max_tokens: 4000
+      context_window: 8000
+      system_prompt: "You are a code reviewer focused on quality and correctness. Review the provided code for bugs, edge cases, and style issues. Suggest specific improvements."
+    backup:
+      model: "mistralai/mistral-7b-instruct"
+      temperature: 0.1
+      max_tokens: 4000
+      context_window: 8000
+      system_prompt: "You are a code reviewer focused on quality and correctness. Review the provided code for bugs, edge cases, and style issues. Suggest specific improvements."
+    validation:
+      schema: "review_schema.json"
+      required_sections: ["Issues", "Suggestions", "Summary"]
+
+# Enhanced memory system configuration
+MEMORY_SYSTEM:
+  chunk_size: 1000  # Approx token size per chunk
+  overlap: 100      # Overlap between chunks 
+  vector_db:
+    embedding_model: "all-MiniLM-L6-v2"  # Local embedding model
+    similarity_threshold: 0.75
+  cache:
+    enabled: true
+    ttl_seconds: 3600  # Cache lifetime
+  context_strategy: "smart_selection"  # Options: full, summary, smart_selection
+
+# Rate limiting configuration to avoid API limits
+RATE_LIMITING:
+  requests_per_minute: 10
+  max_parallel_requests: 2
+  backoff_strategy: "exponential"
+  initial_backoff_seconds: 1
+  max_backoff_seconds: 60
+  
+# Workflow configuration
+WORKFLOW_STAGES:
+  - task: "requirements_analysis"
+    input: "user_idea"
+    output: "requirements_doc"
+    
+  - task: "system_design"
+    input: "requirements_doc"
+    output: "design_doc"
+    
+  - task: "implementation_planning"
+    input: "design_doc"
+    output: "implementation_plan"
+    
+  - task: "code_generation"
+    input: "implementation_plan"
+    output: "source_code"
+    
+  - task: "code_review"
+    input: "source_code"
+    output: "review_comments"
+
+# Validator configuration
+VALIDATORS:
+  syntax:
+    enabled: true
+    retry_on_failure: true
+    max_retries: 3
+  
+  consistency:
+    enabled: true
+    retry_on_failure: true
+    consistency_threshold: 0.8
+    
+  schema:
+    enabled: true
+    retry_on_failure: true
+    schema_dir: "./schemas/"

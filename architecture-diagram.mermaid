@@ -1,0 +1,59 @@
+flowchart TB
+    User[User Input] --> Runner[Run Script]
+    
+    Runner --> TaskQueue[Task Queue]
+    
+    subgraph Dispatcher[Smart Dispatcher]
+        RateLimiter[Rate Limiter]
+        ModelSelector[Model Selector]
+        ChunkManager[Chunk Manager]
+    end
+    
+    TaskQueue --> Dispatcher
+    
+    subgraph OpenRouter[OpenRouter API]
+        subgraph ModelRoles[Model Roles]
+            LLM1[Llama 3 8B\nRequirements Analysis]
+            LLM2[Mistral 7B\nSystem Design]
+            LLM3[Llama 3 8B\nImplementation Planning]
+            LLM4[CodeLlama 7B\nCode Generation]
+            LLM5[CodeLlama 7B\nCode Review]
+        end
+        
+        subgraph BackupModels[Backup Models]
+            BLLM1[Mistral 7B\nBackup for Requirements]
+            BLLM2[Llama 3 8B\nBackup for Design]
+            BLLM3[Phi-2\nBackup for Planning]
+            BLLM4[WizardCoder\nBackup for Code Gen]
+            BLLM5[Mistral 7B\nBackup for Review]
+        end
+    end
+    
+    Dispatcher --> ModelRoles
+    Dispatcher -.-> BackupModels
+    
+    subgraph ContextManager[Enhanced Memory System]
+        VectorDB[(Vector Store)]
+        ResultCache[Result Cache]
+        WindowManager[Context Window Manager]
+    end
+    
+    subgraph Validators[Validation System]
+        SyntaxCheck[Syntax Validator]
+        ConsistencyCheck[Consistency Validator]
+        SchemaCheck[Schema Validator]
+    end
+    
+    ContextManager <--> Dispatcher
+    ModelRoles --> ResultProcessor[Result Processor]
+    BackupModels --> ResultProcessor
+    ResultProcessor --> Validators
+    Validators --> ResultProcessor
+    ResultProcessor --> ContextManager
+    
+    ResultProcessor --> Workspace[(Workspace Directory)]
+    
+    Workspace --> MetaGPT[MetaGPT Integration]
+    
+    class LLM1,LLM2,LLM3,LLM4,LLM5,BLLM1,BLLM2,BLLM3,BLLM4,BLLM5 freeModel;
+    classDef freeModel fill:#f9f,stroke:#333,stroke-width:2px;
