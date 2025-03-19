@@ -1,6 +1,6 @@
 # Enhanced Free Models MetaGPT
 
-A robust implementation to use MetaGPT with multiple free models from OpenRouter, optimizing each stage of the development workflow with specialized models while adding fault tolerance, validation, and intelligent memory management.
+A robust implementation that uses MetaGPT with multiple free models from OpenRouter, optimizing each stage of the development workflow with specialized models while adding fault tolerance, validation, and intelligent memory management.
 
 ## Overview
 
@@ -16,11 +16,11 @@ This project extends MetaGPT to work with free AI models available through OpenR
 
 | Role | Primary Model | Backup Model | Rationale |
 |------|---------------|--------------|-----------|
-| **Requirements Analysis** | deepseek-r1-distill-llama-70b | Mistral 7B | The large 70B model offers significantly better understanding of complex requirements |
-| **System Design** | Mistral 7B | deepseek-r1-distill-llama-70b | Mistral tends to be more concise for architectural decisions, with the larger model as powerful backup |
-| **Implementation Planning** | deepseek-r1-distill-llama-70b | Phi-3-medium-128k | Large model for planning with Phi-3's massive context window (128K) as backup for complex plans |
-| **Code Generation** | olympiccoder-32b | WizardLM 2 8x22b | Both models specialized for code generation with olympiccoder having competitive performance |
-| **Code Review** | olympiccoder-32b | Mistral 7B | Using a code-specific model for review improves feedback quality |
+| **Requirements Analysis** | deepseek-r1-distill-llama-70b | Gemma 3 27B | The large 70B model offers significantly better understanding of complex requirements |
+| **System Design** | Gemma 3 27B | deepseek-r1-distill-llama-70b | Gemma is efficient for architectural decisions, with the larger model as powerful backup |
+| **Implementation Planning** | deepseek-r1-distill-llama-70b | Gemma 3 27B with 128k context | Large model for planning with Gemma's massive context window (128K) as backup for complex plans |
+| **Code Generation** | olympiccoder-32b | Gemma 3 27B | OlympicCoder specialized for code generation with Gemma as reliable backup |
+| **Code Review** | olympiccoder-32b | Gemma 3 27B | Using a code-specific model for review improves feedback quality |
 
 ## Features
 
@@ -32,6 +32,7 @@ This project extends MetaGPT to work with free AI models available through OpenR
 - **Smart Caching**: Reduces API calls through intelligent result caching
 - **Custom Prompting**: Optimized prompts for each development stage
 - **MetaGPT Integration**: Works seamlessly with the MetaGPT framework
+- **Repository Code Review**: Advanced code review capabilities for entire repositories
 
 ## Installation
 
@@ -50,62 +51,202 @@ This project extends MetaGPT to work with free AI models available through OpenR
    ```bash
    export OPENROUTER_API_KEY=your_api_key_here
    ```
+   
+   Alternatively, you can add your API key directly to the `config.yml` file.
 
 4. Install optional dependencies for enhanced features:
    ```bash
-   # For vector-based memory system
+   # For vector-based memory system (highly recommended)
    pip install sentence-transformers
    ```
 
-5. Update the configuration file with available free models:
+5. Verify your API key and available models:
    ```bash
-   python run_free_models_metagpt.py update-config
+   python check_api_key.py
+   python test_openrouter_models.py
    ```
 
 ## Usage
 
-### List Available Free Models
+### Software Development Workflow
+
+The main script for software development is `run_free_models_metagpt.py`. It supports various commands and options:
+
+#### List Available Free Models
 
 ```bash
 python run_free_models_metagpt.py list-models
 ```
 
-### Run a Project (Standard Sequential Mode)
+This command shows all available free models from OpenRouter that you can use with your API key.
+
+#### Update Configuration
+
+```bash
+python run_free_models_metagpt.py update-config
+```
+
+Updates your `config.yml` with the latest available free models, ensuring your configuration stays current.
+
+#### Run a Project (Standard Sequential Mode)
 
 ```bash
 python run_free_models_metagpt.py run --idea "Create a simple blog website with user authentication and post creation functionality"
 ```
 
-### Run a Project (Parallel Mode for Faster Processing)
+This executes tasks in sequence, which is more reliable but slower.
+
+#### Run a Project (Parallel Mode for Faster Processing)
 
 ```bash
 python run_free_models_metagpt.py run --idea "Create a simple blog website with user authentication" --parallel
 ```
 
-### Additional Options
+Executes independent tasks in parallel for faster results, but may occasionally lead to less coherence between stages.
+
+#### Additional Options
 
 ```bash
 python run_free_models_metagpt.py run --help
 ```
 
+Shows all available options for running projects.
+
+### Repository Code Review
+
+The system also includes advanced repository code review capabilities:
+
+```bash
+python run_repo_review.py --repo /path/to/repository --depth standard
+```
+
+Options for the repository review:
+
+- `--repo`: Path to the repository to review (required)
+- `--config`: Path to configuration file (default: "config.yml")
+- `--output`: Directory to save review results (default: "./review_output")
+- `--depth`: Review depth, choices are "basic", "standard", or "deep" (default: "standard")
+- `--batch-size`: Number of files to review in each batch (default: 5)
+
+The repo review generates comprehensive HTML reports including:
+- Repository-level overview
+- Individual file reviews
+- Summary report with key findings and recommendations
+
 ## Configuration
 
-The enhanced `config.yml` allows for extensive customization:
+The `config.yml` file allows for extensive customization:
 
-- **Task Model Mapping**: Primary and backup models for each task
-- **Memory System**: Chunking strategy and vector retrieval settings
-- **Rate Limiting**: Controls for API request frequency
-- **Validation System**: Syntax, schema, and consistency validation
-- **Workflow Stages**: Customizable workflow stages
+### Task-Model Mapping
+
+Configure which models to use for each development stage:
+
+```yaml
+TASK_MODEL_MAPPING:
+  requirements_analysis:
+    primary:
+      model: "deepseek/deepseek-r1-distill-llama-70b:free"
+      temperature: 0.1
+      max_tokens: 4000
+      context_window: 8000
+      system_prompt: "You are a skilled product manager analyzing project requirements..."
+    backup:
+      model: "google/gemma-3-27b-it:free"
+      temperature: 0.1
+      max_tokens: 3000
+      context_window: 8000
+      system_prompt: "You are a skilled product manager..."
+    validation:
+      schema: "requirements_schema.json"
+      required_sections: ["Functional Requirements", "Non-Functional Requirements", "Constraints"]
+```
+
+### Memory System
+
+Configure how context is managed between models:
+
+```yaml
+MEMORY_SYSTEM:
+  chunk_size: 1000  # Approx token size per chunk
+  overlap: 100      # Overlap between chunks 
+  vector_db:
+    embedding_model: "all-MiniLM-L6-v2"  # Local embedding model
+    similarity_threshold: 0.75
+  cache:
+    enabled: true
+    ttl_seconds: 3600  # Cache lifetime
+  context_strategy: "smart_selection"  # Options: full, summary, smart_selection
+```
+
+### Rate Limiting
+
+Control API request frequency to avoid hitting limits:
+
+```yaml
+RATE_LIMITING:
+  requests_per_minute: 10
+  max_parallel_requests: 2
+  backoff_strategy: "exponential"
+  initial_backoff_seconds: 1
+  max_backoff_seconds: 60
+```
+
+### Workflow Stages
+
+Define the sequence of tasks in your development workflow:
+
+```yaml
+WORKFLOW_STAGES:
+  - task: "requirements_analysis"
+    input: "user_idea"
+    output: "requirements_doc"
+    
+  - task: "system_design"
+    input: "requirements_doc"
+    output: "design_doc"
+```
+
+### Validators
+
+Configure validation criteria for each stage:
+
+```yaml
+VALIDATORS:
+  syntax:
+    enabled: true
+    retry_on_failure: true
+    max_retries: 3
+  
+  consistency:
+    enabled: true
+    retry_on_failure: true
+    consistency_threshold: 0.8
+    
+  schema:
+    enabled: true
+    retry_on_failure: true
+    schema_dir: "./schemas/"
+```
 
 ## How It Works
 
 ### Key Components
 
 1. **Enhanced Task Orchestrator**: Manages workflow with validation and parallel processing
+   - Source: `enhanced_task_orchestrator.py`
+   - Handles task execution, validation, and manages the flow of information between stages
+
 2. **Enhanced OpenRouter Adapter**: Handles model selection, rate limiting, and circuit breaking
+   - Source: `enhanced_openrouter_adapter.py`
+   - Manages API calls, rotates models when needed, and implements fallback strategies
+
 3. **Enhanced Memory System**: Intelligently manages context between stages
+   - Source: `enhanced_memory.py`
+   - Uses vector embeddings (when available) or keyword-based retrieval to maintain context
+
 4. **Validation System**: Ensures quality at each step of the process
+   - Source: `validators.py`
+   - Validates syntax, schema compliance, and consistency between stages
 
 ### Advanced Features
 
@@ -120,32 +261,77 @@ The enhanced `config.yml` allows for extensive customization:
 ```
 .
 ├── config.yml                     # Configuration file
+├── check_api_key.py               # API key verification tool
 ├── enhanced_memory.py             # Memory system
 ├── enhanced_openrouter_adapter.py # OpenRouter integration
 ├── enhanced_task_orchestrator.py  # Task orchestration
 ├── metagpt_integration.py         # MetaGPT integration
 ├── readme.md                      # Documentation
+├── repo_code_review.py            # Repository code review
+├── repository_loader.py           # Repository analysis
 ├── requirements.txt               # Dependencies
-├── run_free_models_metagpt.py     # Main script
+├── run_free_models_metagpt.py     # Main script for software development
+├── run_repo_review.py             # Main script for repository reviews
+├── test_openrouter_api.py         # API testing tool
+├── test_openrouter_models.py      # Model testing tool
 ├── validators.py                  # Validation system
 └── workspace/                     # Output directory (created on first run)
-    ├── requirements_doc.txt
-    ├── design_doc.txt
-    ├── implementation_plan.txt
-    ├── source_code.txt
-    ├── review_comments.txt
-    └── project_summary.md
 ```
 
-## Advantages Over The Original Implementation
+## Troubleshooting
 
-1. **Fault Tolerance**: Gracefully handles API failures and rate limits
-2. **Efficient Context Management**: Makes better use of limited context windows
-3. **Validation**: Ensures higher quality outputs at each stage
-4. **Parallel Processing**: Faster execution for independent tasks
-5. **Smart Caching**: Reduces redundant API calls
-6. **Enhanced Model Performance**: Uses significantly larger models (up to 70B parameters) for better quality outputs
-7. **Extended Context Windows**: Leverages Phi-3's 128K context window for handling complex implementation plans
+### API Key Issues
+
+If you encounter authentication errors:
+
+1. Verify your API key with `python check_api_key.py`
+2. Ensure the key is correctly set in `config.yml` or as an environment variable
+3. Check if you have access to the models by running `python test_openrouter_models.py`
+
+### Model Availability
+
+Free model availability can change. If certain models aren't working:
+
+1. Run `python test_openrouter_models.py` to see which models are currently available
+2. Update your configuration with `python run_free_models_metagpt.py update-config`
+
+### Rate Limiting
+
+If you hit rate limits:
+
+1. Reduce the `requests_per_minute` setting in `config.yml`
+2. Increase `initial_backoff_seconds` and `max_backoff_seconds` for more gradual retries
+
+## Advanced Usage
+
+### Working with Large Repositories
+
+For very large repositories, use batch processing:
+
+```bash
+python run_repo_review.py --repo /path/to/large/repo --batch-size 3 --depth basic
+```
+
+This processes fewer files at once and uses a simpler review depth.
+
+### Customizing Prompts
+
+You can customize the system prompts for each model in `config.yml`:
+
+```yaml
+system_prompt: "You are a software architect designing systems. Based on the requirements, create a high-level architecture with components, interfaces, and data flows. Be concise and focus on the most important design decisions."
+```
+
+### MetaGPT Integration
+
+Export your project to MetaGPT format for compatibility with MetaGPT tools:
+
+```python
+from metagpt_integration import MetaGPTIntegration
+
+integration = MetaGPTIntegration("./workspace")
+metagpt_dir = integration.export_to_metagpt("./metagpt_export")
+```
 
 ## Contributing
 
