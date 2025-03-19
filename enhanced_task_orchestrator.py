@@ -164,16 +164,20 @@ class EnhancedTaskOrchestrator:
             print(f"Error executing task {task_name}: {str(e)}")
             return False, str(e)
             
-    async def _process_task_queue(self, workspace_path: Path) -> Dict[str, str]:
+    async def _process_task_queue(self, workspace_path: Path, initial_results: Dict[str, str]) -> Dict[str, str]:
         """Process tasks from the queue.
         
         Args:
             workspace_path: Path to workspace directory
+            initial_results: Initial results dictionary with user input
             
         Returns:
             Dictionary of results
         """
-        results = {}
+        # Initialize with the provided initial results
+        results = dict(initial_results)
+        
+        print("Initial input:", results.keys())
         
         while not self.task_queue.empty():
             # Get next task
@@ -183,6 +187,8 @@ class EnhancedTaskOrchestrator:
             output_key = task_info["output"]
             
             print(f"Processing task: {task_name}")
+            print(f"  Input key: {input_key}")
+            print(f"  Available keys: {list(results.keys())}")
             
             # Get input from results
             if input_key not in results:
@@ -222,10 +228,10 @@ class EnhancedTaskOrchestrator:
             self.task_queue.task_done()
             
         return results
-            
+    
     async def run_workflow(self, 
-                          input_idea: str, 
-                          workspace_dir: str = "./workspace") -> Dict[str, str]:
+                      input_idea: str, 
+                      workspace_dir: str = "./workspace") -> Dict[str, str]:
         """Run the entire workflow from start to finish with enhanced processing.
         
         Args:
@@ -241,6 +247,11 @@ class EnhancedTaskOrchestrator:
         
         # Initialize results
         results = {"user_idea": input_idea}
+        
+        # Save the input idea to a file
+        input_file = workspace_path / "user_idea.txt"
+        with open(input_file, 'w') as f:
+            f.write(input_idea)
         
         # Add initial idea to memory
         self.memory.add_document(
@@ -261,8 +272,8 @@ class EnhancedTaskOrchestrator:
                 "output": stage.get("output")
             })
             
-        # Process tasks
-        results = await self._process_task_queue(workspace_path)
+        # Process tasks with initial results
+        results = await self._process_task_queue(workspace_path, results)
         
         # Create summary file
         summary_file = workspace_path / "project_summary.md"

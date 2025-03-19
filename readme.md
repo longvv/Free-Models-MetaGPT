@@ -119,15 +119,16 @@ The enhanced `config.yml` allows for extensive customization:
 
 ```
 .
-├── config.yml                     # Enhanced configuration file
-├── enhanced_openrouter_adapter.py # Enhanced OpenRouter integration
-├── enhanced_memory.py             # Vector-based memory system
-├── enhanced_task_orchestrator.py  # Advanced task orchestration
-├── validators.py                  # Output validation system
-├── metagpt_integration.py         # Integration with MetaGPT
+├── config.yml                     # Configuration file
+├── enhanced_memory.py             # Memory system
+├── enhanced_openrouter_adapter.py # OpenRouter integration
+├── enhanced_task_orchestrator.py  # Task orchestration
+├── metagpt_integration.py         # MetaGPT integration
+├── readme.md                      # Documentation
+├── requirements.txt               # Dependencies
 ├── run_free_models_metagpt.py     # Main script
-├── schemas/                       # Validation schemas
-└── workspace/                     # Output directory
+├── validators.py                  # Validation system
+└── workspace/                     # Output directory (created on first run)
     ├── requirements_doc.txt
     ├── design_doc.txt
     ├── implementation_plan.txt

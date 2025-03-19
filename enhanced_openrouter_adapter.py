@@ -186,13 +186,12 @@ class RateLimiter:
 class ModelRotator:
     """Rotates through available models to distribute load."""
     
-    def __init__(self, primary_model: str, backup_models: List[str] = None, model_api_keys: Dict[str, str] = None):
+    def __init__(self, primary_model: str, backup_models: List[str] = None):
         """Initialize the model rotator.
         
         Args:
             primary_model: Primary model to use
             backup_models: List of backup models
-            model_api_keys: Dictionary mapping model names to API keys
         """
         self.primary_model = primary_model
         self.backup_models = backup_models or []
@@ -200,15 +199,14 @@ class ModelRotator:
             model: CircuitBreaker() for model in [primary_model] + self.backup_models
         }
         self.current_index = 0
-        self.model_api_keys = model_api_keys or {}
         
         # Add model size awareness
         self.model_sizes = {
-            "deepseek/deepseek-r1-distill-llama-70b": "large",
-            "open-r1/olympiccoder-32b": "medium",
-            "microsoft/phi-3-medium-128k-instruct": "medium-large-context",
-            "mistralai/mistral-7b-instruct": "small",
-            "microsoft/wizardlm-2-8x22b": "medium",
+            "deepseek/deepseek-r1-distill-llama-70b:free": "large",
+            "open-r1/olympiccoder-32b:free": "medium",
+            "google/gemma-3-27b-it:free": "medium-large-context",
+            "google/gemma-3-27b-it:free": "small",
+            "google/gemma-3-27b-it:free": "medium", 
             "meta-llama/llama-guard-3-8b": "small"
         }
         
@@ -235,17 +233,6 @@ class ModelRotator:
                 return model
                 
         return None
-    
-    def get_api_key_for_model(self, model: str) -> Optional[str]:
-        """Get the API key for a specific model.
-        
-        Args:
-            model: Model name
-            
-        Returns:
-            API key for the model or None if not found
-        """
-        return self.model_api_keys.get(model)
         
     def record_success(self, model: str) -> None:
         """Record a successful API call.
@@ -278,10 +265,15 @@ class EnhancedOpenRouterAdapter:
             config: Configuration dictionary
             api_key: OpenRouter API key (optional, can be set via env variable)
         """
+        # Get API key from parameter, environment variable, or config
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or config.get("OPENROUTER_API_KEY")
+        
         if not self.api_key:
-            raise ValueError("OpenRouter API key not provided and not found in environment")
-            
+            print("WARNING: OpenRouter API key not provided and not found in environment or config.")
+            print("API requests will fail without a valid API key.")
+        else:
+            print(f"Using OpenRouter API key (first 5 chars): {self.api_key[:5]}...")
+        
         rate_limit_config = config.get("RATE_LIMITING", {})
         self.rate_limiter = RateLimiter(
             requests_per_minute=rate_limit_config.get("requests_per_minute", 10),
@@ -293,21 +285,6 @@ class EnhancedOpenRouterAdapter:
         
         self.base_url = "https://openrouter.ai/api/v1"
         self.model_rotators = {}
-        
-        # Extract model API keys from config
-        self.model_api_keys = {}
-        for task_name, task_config in config.get("TASK_MODEL_MAPPING", {}).items():
-            primary_config = task_config.get("primary", {})
-            backup_config = task_config.get("backup", {})
-            
-            primary_model = primary_config.get("model")
-            backup_model = backup_config.get("model")
-            
-            if primary_model and "api_key" in primary_config:
-                self.model_api_keys[primary_model] = primary_config["api_key"]
-                
-            if backup_model and "api_key" in backup_config:
-                self.model_api_keys[backup_model] = backup_config["api_key"]
         
     def _get_model_rotator(self, 
                           primary_model: str, 
@@ -323,11 +300,7 @@ class EnhancedOpenRouterAdapter:
         """
         key = primary_model
         if key not in self.model_rotators:
-            self.model_rotators[key] = ModelRotator(
-                primary_model, 
-                backup_models,
-                model_api_keys=self.model_api_keys
-            )
+            self.model_rotators[key] = ModelRotator(primary_model, backup_models)
             
         return self.model_rotators[key]
         
@@ -359,6 +332,18 @@ class EnhancedOpenRouterAdapter:
         # Generate request key for rate limiter
         request_key = f"{model}:{endpoint}"
         
+        # Verify API key is available
+        if not self.api_key:
+            raise Exception("OpenRouter API key is not set. Please set OPENROUTER_API_KEY in your config or environment.")
+        
+        # Set up headers with the global API key
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://metagpt.com",  # Replace with your domain
+            "X-Title": "MetaGPT Free Models"        # Your application name
+        }
+        
         retries = 0
         while retries <= max_retries:
             # Get next available model
@@ -366,20 +351,11 @@ class EnhancedOpenRouterAdapter:
             if not current_model:
                 raise Exception(f"All models are currently unavailable. Try again later.")
                 
-            # Get the model-specific API key if available
-            model_api_key = rotator.get_api_key_for_model(current_model) or self.api_key
-            
-            # Set up headers with the appropriate API key
-            headers = {
-                "Authorization": f"Bearer {model_api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://metagpt.com",  # Replace with your domain
-                "X-Title": "MetaGPT Free Models"        # Your application name
-            }
-            
             # Update payload with current model
             model_payload = dict(payload)
             model_payload["model"] = current_model
+            
+            print(f"Making request to model: {current_model}")
             
             # Adjust timeout based on model size
             model_timeout = timeout
@@ -408,6 +384,19 @@ class EnhancedOpenRouterAdapter:
                                 self.rate_limiter.reset_retries(request_key)
                                 return result
                                 
+                            elif response.status == 401:
+                                # Authentication error
+                                error_text = await response.text()
+                                print(f"Authentication error for model {current_model}: {error_text}")
+                                print("Please check your OpenRouter API key.")
+                                
+                                if retries < max_retries:
+                                    wait_time = self.rate_limiter.get_backoff_time(request_key)
+                                    print(f"Retrying in {wait_time:.1f}s ({retries+1}/{max_retries})")
+                                    await asyncio.sleep(wait_time)
+                                else:
+                                    raise Exception(f"Authentication failed after {max_retries} retries: {error_text}")
+                            
                             elif response.status == 429:
                                 # Rate limit hit
                                 error_text = await response.text()
@@ -478,7 +467,7 @@ class EnhancedOpenRouterAdapter:
         max_tokens = primary_config.get("max_tokens", 2048)
         
         # Special handling for large context window models
-        if primary_model == "microsoft/phi-3-medium-128k-instruct":
+        if primary_model == "google/gemma-3-27b-it:free":
             timeout = max(timeout, 300)  # Longer timeout for large context window
             
         # Special handling for large parameter models

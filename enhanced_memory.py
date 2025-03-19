@@ -207,11 +207,11 @@ class EnhancedMemorySystem:
         
         # Model-specific context sizes for optimizing retrieval
         self.model_context_sizes = {
-            "deepseek/deepseek-r1-distill-llama-70b": 8000,
-            "mistralai/mistral-7b-instruct": 8000,
-            "microsoft/phi-3-medium-128k-instruct": 128000,
-            "open-r1/olympiccoder-32b": 8000,
-            "microsoft/wizardlm-2-8x22b": 12000,
+            "deepseek/deepseek-r1-distill-llama-70b:free": 8000,
+            "google/gemma-3-27b-it:free": 8000,
+            "google/gemma-3-27b-it:free": 128000,
+            "open-r1/olympiccoder-32b:free": 8000,
+            "google/gemma-3-27b-it:free": 12000,
             "meta-llama/llama-guard-3-8b": 8000
         }
                 
