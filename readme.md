@@ -37,7 +37,7 @@ This project extends MetaGPT to work with free AI models available through OpenR
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/enhanced-free-models-metagpt.git
+   git clone https://github.com/longvv/Free-Models-MetaGPT.git
    cd enhanced-free-models-metagpt
    ```
 
