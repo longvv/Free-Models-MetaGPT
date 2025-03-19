@@ -204,6 +204,16 @@ class EnhancedMemorySystem:
                 
         # Create workspace directory if it doesn't exist
         os.makedirs(workspace_dir, exist_ok=True)
+        
+        # Model-specific context sizes for optimizing retrieval
+        self.model_context_sizes = {
+            "deepseek/deepseek-r1-distill-llama-70b": 8000,
+            "mistralai/mistral-7b-instruct": 8000,
+            "microsoft/phi-3-medium-128k-instruct": 128000,
+            "open-r1/olympiccoder-32b": 8000,
+            "microsoft/wizardlm-2-8x22b": 12000,
+            "meta-llama/llama-guard-3-8b": 8000
+        }
                 
     def _split_text(self, text: str) -> List[str]:
         """Split text into overlapping chunks.
@@ -333,19 +343,30 @@ class EnhancedMemorySystem:
     def get_relevant_context(self, 
                            query: str, 
                            max_chunks: int = 3,
-                           task: Optional[str] = None) -> str:
+                           task: Optional[str] = None,
+                           model: Optional[str] = None) -> str:
         """Get the most relevant context for a query.
         
         Args:
             query: Query text
             max_chunks: Maximum number of chunks to include
             task: Task name for context filtering
+            model: Model name for context window optimization
             
         Returns:
             Relevant context text
         """
         if not self.chunks:
             return ""
+        
+        # Adjust max_chunks based on model's context window if provided
+        if model and model in self.model_context_sizes:
+            context_size = self.model_context_sizes[model]
+            # For very large context models like Phi-3, allow more chunks
+            if context_size > 32000:  # For extremely large context windows
+                max_chunks = max(max_chunks, 12)
+            elif context_size > 8000:  # For large context windows
+                max_chunks = max(max_chunks, 6)
             
         query_embedding = self._create_embedding(query)
         

@@ -374,6 +374,71 @@ class ValidationSystem:
                         }
                     }
                 }
+            },
+            "implementation_schema.json": {
+                "type": "object",
+                "required": ["tasks"],
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "description", "dependencies"],
+                            "properties": {
+                                "id": {"type": "string"},
+                                "description": {"type": "string"},
+                                "dependencies": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                }
+                            }
+                        }
+                    },
+                    "timeline": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["phase", "tasks"],
+                            "properties": {
+                                "phase": {"type": "string"},
+                                "tasks": {
+                                    "type": "array",
+                                    "items": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "review_schema.json": {
+                "type": "object",
+                "required": ["issues", "suggestions"],
+                "properties": {
+                    "issues": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "description", "severity"],
+                            "properties": {
+                                "id": {"type": "string"},
+                                "description": {"type": "string"},
+                                "severity": {"type": "string", "enum": ["critical", "major", "minor", "suggestion"]}
+                            }
+                        }
+                    },
+                    "suggestions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "description"],
+                            "properties": {
+                                "id": {"type": "string"},
+                                "description": {"type": "string"}
+                            }
+                        }
+                    },
+                    "summary": {"type": "string"}
+                }
             }
         }
         
@@ -399,17 +464,37 @@ class ValidationSystem:
         """
         validation_results = []
         
+        # Extract code blocks for code validation if needed
+        code_blocks = {}
+        if task_name == "code_generation" or task_name == "code_review":
+            # Extract Python code blocks
+            python_pattern = re.compile(r'```python\s*(.*?)\s*```', re.DOTALL)
+            python_matches = python_pattern.findall(text)
+            if python_matches:
+                code_blocks["python"] = "\n".join(python_matches)
+                
+            # Extract JavaScript code blocks
+            js_pattern = re.compile(r'```(?:javascript|js)\s*(.*?)\s*```', re.DOTALL)
+            js_matches = js_pattern.findall(text)
+            if js_matches:
+                code_blocks["javascript"] = "\n".join(js_matches)
+        
         # Syntax validation
         if task_name == "code_generation" and self.config.get("syntax", {}).get("enabled", True):
-            # Determine language from text or config
-            language = "python"  # Default
-            if "```python" in text:
-                language = "python"
-            elif "```javascript" in text or "```js" in text:
-                language = "javascript"
-                
-            is_valid, message = await self.syntax_validator.validate_code(text, language)
-            validation_results.append((is_valid, message))
+            # Check each language found in code blocks
+            for language, code in code_blocks.items():
+                is_valid, message = await self.syntax_validator.validate_code(code, language)
+                validation_results.append((is_valid, f"[{language}] {message}"))
+            
+            # If no code blocks found but validation requested, check the whole text
+            if not code_blocks:
+                # Try to guess the language
+                if "def " in text and ":" in text:
+                    is_valid, message = await self.syntax_validator.validate_code(text, "python")
+                    validation_results.append((is_valid, message))
+                elif "function " in text and "{" in text:
+                    is_valid, message = await self.syntax_validator.validate_code(text, "javascript")
+                    validation_results.append((is_valid, message))
             
         # Schema validation
         schema_name = validation_config.get("schema")
@@ -429,9 +514,9 @@ class ValidationSystem:
             is_valid, message = await self.syntax_validator.validate_patterns(text, required_patterns)
             validation_results.append((is_valid, message))
             
-        # Consistency validation
-        # This would require access to previous outputs
-        # Not implemented in this example
+        # Consistency validation based on task
+        # This would require access to previous outputs in a real implementation
+        # Not fully implemented in this example
         
         # Combine results
         if not validation_results:

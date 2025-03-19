@@ -186,12 +186,13 @@ class RateLimiter:
 class ModelRotator:
     """Rotates through available models to distribute load."""
     
-    def __init__(self, primary_model: str, backup_models: List[str] = None):
+    def __init__(self, primary_model: str, backup_models: List[str] = None, model_api_keys: Dict[str, str] = None):
         """Initialize the model rotator.
         
         Args:
             primary_model: Primary model to use
             backup_models: List of backup models
+            model_api_keys: Dictionary mapping model names to API keys
         """
         self.primary_model = primary_model
         self.backup_models = backup_models or []
@@ -199,6 +200,17 @@ class ModelRotator:
             model: CircuitBreaker() for model in [primary_model] + self.backup_models
         }
         self.current_index = 0
+        self.model_api_keys = model_api_keys or {}
+        
+        # Add model size awareness
+        self.model_sizes = {
+            "deepseek/deepseek-r1-distill-llama-70b": "large",
+            "open-r1/olympiccoder-32b": "medium",
+            "microsoft/phi-3-medium-128k-instruct": "medium-large-context",
+            "mistralai/mistral-7b-instruct": "small",
+            "microsoft/wizardlm-2-8x22b": "medium",
+            "meta-llama/llama-guard-3-8b": "small"
+        }
         
     def get_next_available_model(self) -> Optional[str]:
         """Get the next available model.
@@ -223,6 +235,17 @@ class ModelRotator:
                 return model
                 
         return None
+    
+    def get_api_key_for_model(self, model: str) -> Optional[str]:
+        """Get the API key for a specific model.
+        
+        Args:
+            model: Model name
+            
+        Returns:
+            API key for the model or None if not found
+        """
+        return self.model_api_keys.get(model)
         
     def record_success(self, model: str) -> None:
         """Record a successful API call.
@@ -271,6 +294,21 @@ class EnhancedOpenRouterAdapter:
         self.base_url = "https://openrouter.ai/api/v1"
         self.model_rotators = {}
         
+        # Extract model API keys from config
+        self.model_api_keys = {}
+        for task_name, task_config in config.get("TASK_MODEL_MAPPING", {}).items():
+            primary_config = task_config.get("primary", {})
+            backup_config = task_config.get("backup", {})
+            
+            primary_model = primary_config.get("model")
+            backup_model = backup_config.get("model")
+            
+            if primary_model and "api_key" in primary_config:
+                self.model_api_keys[primary_model] = primary_config["api_key"]
+                
+            if backup_model and "api_key" in backup_config:
+                self.model_api_keys[backup_model] = backup_config["api_key"]
+        
     def _get_model_rotator(self, 
                           primary_model: str, 
                           backup_models: List[str] = None) -> ModelRotator:
@@ -285,7 +323,11 @@ class EnhancedOpenRouterAdapter:
         """
         key = primary_model
         if key not in self.model_rotators:
-            self.model_rotators[key] = ModelRotator(primary_model, backup_models)
+            self.model_rotators[key] = ModelRotator(
+                primary_model, 
+                backup_models,
+                model_api_keys=self.model_api_keys
+            )
             
         return self.model_rotators[key]
         
@@ -310,12 +352,6 @@ class EnhancedOpenRouterAdapter:
             API response as dictionary
         """
         url = f"{self.base_url}/{endpoint}"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://metagpt.com",  # Replace with your domain
-            "X-Title": "MetaGPT Free Models"        # Your application name
-        }
         
         # Get model rotator
         rotator = self._get_model_rotator(model, backup_models)
@@ -330,9 +366,29 @@ class EnhancedOpenRouterAdapter:
             if not current_model:
                 raise Exception(f"All models are currently unavailable. Try again later.")
                 
+            # Get the model-specific API key if available
+            model_api_key = rotator.get_api_key_for_model(current_model) or self.api_key
+            
+            # Set up headers with the appropriate API key
+            headers = {
+                "Authorization": f"Bearer {model_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://metagpt.com",  # Replace with your domain
+                "X-Title": "MetaGPT Free Models"        # Your application name
+            }
+            
             # Update payload with current model
             model_payload = dict(payload)
             model_payload["model"] = current_model
+            
+            # Adjust timeout based on model size
+            model_timeout = timeout
+            if "70b" in current_model:
+                model_timeout = max(timeout, 240)  # Longer timeout for 70B model
+            elif "128k" in current_model:
+                model_timeout = max(timeout, 300)  # Even longer timeout for large context model
+            elif "32b" in current_model or "22b" in current_model:
+                model_timeout = max(timeout, 180)  # Extended timeout for larger models
             
             try:
                 # Acquire rate limiter permission
@@ -343,7 +399,7 @@ class EnhancedOpenRouterAdapter:
                         async with session.post(url, 
                                               json=model_payload, 
                                               headers=headers, 
-                                              timeout=timeout) as response:
+                                              timeout=model_timeout) as response:
                             
                             if response.status == 200:
                                 # Success!
@@ -421,6 +477,14 @@ class EnhancedOpenRouterAdapter:
         temperature = primary_config.get("temperature", 0.7)
         max_tokens = primary_config.get("max_tokens", 2048)
         
+        # Special handling for large context window models
+        if primary_model == "microsoft/phi-3-medium-128k-instruct":
+            timeout = max(timeout, 300)  # Longer timeout for large context window
+            
+        # Special handling for large parameter models
+        if "70b" in primary_model or "32b" in primary_model or "22b" in primary_model:
+            timeout = max(timeout, 240)  # Longer timeout for large models
+        
         backup_models = [backup_model] if backup_model else []
         
         payload = {
@@ -445,6 +509,7 @@ class EnhancedOpenRouterAdapter:
             List of model information dictionaries
         """
         url = f"{self.base_url}/models"
+        # Use the default API key for this operation
         headers = {"Authorization": f"Bearer {self.api_key}"}
         
         # Acquire rate limiter permission

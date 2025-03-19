@@ -13,18 +13,18 @@ flowchart TB
     
     subgraph OpenRouter[OpenRouter API]
         subgraph ModelRoles[Model Roles]
-            LLM1[Llama 3 8B\nRequirements Analysis]
+            LLM1[deepseek-r1-distill-llama-70b\nRequirements Analysis]
             LLM2[Mistral 7B\nSystem Design]
-            LLM3[Llama 3 8B\nImplementation Planning]
-            LLM4[CodeLlama 7B\nCode Generation]
-            LLM5[CodeLlama 7B\nCode Review]
+            LLM3[deepseek-r1-distill-llama-70b\nImplementation Planning]
+            LLM4[olympiccoder-32b\nCode Generation]
+            LLM5[olympiccoder-32b\nCode Review]
         end
         
         subgraph BackupModels[Backup Models]
             BLLM1[Mistral 7B\nBackup for Requirements]
-            BLLM2[Llama 3 8B\nBackup for Design]
-            BLLM3[Phi-2\nBackup for Planning]
-            BLLM4[WizardCoder\nBackup for Code Gen]
+            BLLM2[deepseek-r1-distill-llama-70b\nBackup for Design]
+            BLLM3[Phi-3-medium-128k\nBackup for Planning]
+            BLLM4[WizardLM 2 8x22b\nBackup for Code Gen]
             BLLM5[Mistral 7B\nBackup for Review]
         end
     end

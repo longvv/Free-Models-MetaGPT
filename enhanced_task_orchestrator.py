@@ -67,8 +67,16 @@ class EnhancedTaskOrchestrator:
         if not task_config:
             return False, f"Task not found in configuration: {task_name}"
             
-        # Get context from memory system
-        context = self.memory.get_relevant_context(input_data, task=task_name)
+        # Get primary configs
+        primary_config = task_config.get("primary", {})
+        primary_model = primary_config.get("model")
+        
+        # Get context from memory system - pass model name for context optimization
+        context = self.memory.get_relevant_context(
+            input_data, 
+            task=task_name,
+            model=primary_model
+        )
         
         # Prepare input with context
         if context:
@@ -76,10 +84,19 @@ class EnhancedTaskOrchestrator:
         else:
             full_input = input_data
             
-        # Get primary configs
-        primary_config = task_config.get("primary", {})
         system_prompt = primary_config.get("system_prompt", "")
         
+        # Enhanced prompting for specific model types
+        if "deepseek" in primary_model:
+            # Enhance system prompt for DeepSeek model
+            system_prompt = f"{system_prompt}\n\nPlease be thorough and detailed in your analysis."
+        elif "olympiccoder" in primary_model:
+            # Enhance system prompt for code-specific model
+            system_prompt = f"{system_prompt}\n\nFocus on writing clean, efficient, and well-documented code."
+        elif "phi-3" in primary_model:
+            # Enhance system prompt for Phi-3 with large context window
+            system_prompt = f"{system_prompt}\n\nUtilize your large context window to maintain coherence across the entire task."
+            
         # Create messages array
         messages = [
             {"role": "system", "content": system_prompt},

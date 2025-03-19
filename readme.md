@@ -16,11 +16,11 @@ This project extends MetaGPT to work with free AI models available through OpenR
 
 | Role | Primary Model | Backup Model | Rationale |
 |------|---------------|--------------|-----------|
-| **Requirements Analysis** | Llama 3 8B | Mistral 7B | Llama 3 8B has better instruction-following for structured requirements |
-| **System Design** | Mistral 7B | Llama 3 8B | Mistral tends to be more concise for architectural decisions |
-| **Implementation Planning** | Llama 3 8B | Phi-2 | Llama 3 has better planning capabilities for complex tasks |
-| **Code Generation** | CodeLlama 7B | WizardCoder | CodeLlama is specifically trained for coding tasks |
-| **Code Review** | CodeLlama 7B | Mistral 7B | Using a code-specific model for review improves feedback quality |
+| **Requirements Analysis** | deepseek-r1-distill-llama-70b | Mistral 7B | The large 70B model offers significantly better understanding of complex requirements |
+| **System Design** | Mistral 7B | deepseek-r1-distill-llama-70b | Mistral tends to be more concise for architectural decisions, with the larger model as powerful backup |
+| **Implementation Planning** | deepseek-r1-distill-llama-70b | Phi-3-medium-128k | Large model for planning with Phi-3's massive context window (128K) as backup for complex plans |
+| **Code Generation** | olympiccoder-32b | WizardLM 2 8x22b | Both models specialized for code generation with olympiccoder having competitive performance |
+| **Code Review** | olympiccoder-32b | Mistral 7B | Using a code-specific model for review improves feedback quality |
 
 ## Features
 
@@ -37,7 +37,7 @@ This project extends MetaGPT to work with free AI models available through OpenR
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/longvv/Free-Models-MetaGPT.git
+   git clone https://github.com/yourusername/enhanced-free-models-metagpt.git
    cd enhanced-free-models-metagpt
    ```
 
@@ -143,6 +143,8 @@ The enhanced `config.yml` allows for extensive customization:
 3. **Validation**: Ensures higher quality outputs at each stage
 4. **Parallel Processing**: Faster execution for independent tasks
 5. **Smart Caching**: Reduces redundant API calls
+6. **Enhanced Model Performance**: Uses significantly larger models (up to 70B parameters) for better quality outputs
+7. **Extended Context Windows**: Leverages Phi-3's 128K context window for handling complex implementation plans
 
 ## Contributing
 
