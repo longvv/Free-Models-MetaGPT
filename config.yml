@@ -7,14 +7,14 @@ TASK_MODEL_MAPPING:
   requirements_analysis:
     primary:
       model: "deepseek/deepseek-r1-distill-llama-70b"
-      api_key: "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"
+      api_key: ""
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a skilled product manager analyzing project requirements. Extract clear, actionable requirements from user input and organize them in a structured format. Focus on clarity and completeness."
     backup:
       model: "mistralai/mistral-7b-instruct"
-      api_key: "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"
+      api_key: ""
       temperature: 0.1
       max_tokens: 3000
       context_window: 8000
@@ -26,14 +26,14 @@ TASK_MODEL_MAPPING:
   system_design:
     primary:
       model: "mistralai/mistral-7b-instruct"
-      api_key: "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"
+      api_key: ""
       temperature: 0.2
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a software architect designing systems. Based on the requirements, create a high-level architecture with components, interfaces, and data flows. Be concise and focus on the most important design decisions."
     backup:
       model: "deepseek/deepseek-r1-distill-llama-70b"
-      api_key: "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"
+      api_key: ""
       temperature: 0.2
       max_tokens: 4000
       context_window: 8000 
@@ -45,14 +45,14 @@ TASK_MODEL_MAPPING:
   implementation_planning:
     primary:
       model: "deepseek/deepseek-r1-distill-llama-70b"
-      api_key: "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"
+      api_key: ""
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a technical lead planning software implementation. Break down the architectural design into specific implementation tasks, focusing on technical details and dependencies."
     backup:
       model: "microsoft/phi-3-medium-128k-instruct"
-      api_key: "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"
+      api_key: ""
       temperature: 0.1
       max_tokens: 4096
       context_window: 128000
@@ -64,14 +64,14 @@ TASK_MODEL_MAPPING:
   code_generation:
     primary:
       model: "open-r1/olympiccoder-32b"
-      api_key: "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"
+      api_key: ""
       temperature: 0.2
       max_tokens: 8000
       context_window: 8000
       system_prompt: "You are a skilled software engineer. Generate clean, maintainable code based on the implementation plan. Include helpful comments and follow best practices."
     backup:
       model: "microsoft/wizardlm-2-8x22b"
-      api_key: "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"
+      api_key: ""
       temperature: 0.2
       max_tokens: 6000
       context_window: 12000
@@ -84,14 +84,14 @@ TASK_MODEL_MAPPING:
   code_review:
     primary:
       model: "open-r1/olympiccoder-32b"
-      api_key: "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"
+      api_key: ""
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a code reviewer focused on quality and correctness. Review the provided code for bugs, edge cases, and style issues. Suggest specific improvements."
     backup:
       model: "mistralai/mistral-7b-instruct"
-      api_key: "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"
+      api_key: ""
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
