@@ -205,7 +205,7 @@ class ModelRotator:
             "deepseek/deepseek-r1-distill-llama-70b:free": "large",
             "open-r1/olympiccoder-32b:free": "medium",
             "google/gemma-3-27b-it:free": "medium-large-context",
-            "google/gemma-3-27b-it:free": "small",
+            "google/gemma-3-27b-chat:free": "small",
             "google/gemma-3-27b-it:free": "medium", 
             "meta-llama/llama-guard-3-8b": "small"
         }

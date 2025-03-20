@@ -18,7 +18,7 @@ This project extends MetaGPT to work with free AI models available through OpenR
 |------|---------------|--------------|-----------|
 | **Requirements Analysis** | deepseek-r1-distill-llama-70b | Gemma 3 27B | The large 70B model offers significantly better understanding of complex requirements |
 | **System Design** | Gemma 3 27B | deepseek-r1-distill-llama-70b | Gemma is efficient for architectural decisions, with the larger model as powerful backup |
-| **Implementation Planning** | deepseek-r1-distill-llama-70b | Gemma 3 27B with 128k context | Large model for planning with Gemma's massive context window (128K) as backup for complex plans |
+| **Implementation Planning** | deepseek-r1-distill-llama-70b | Gemma 3 27B | Large model for planning with Gemma's capabilities as backup |
 | **Code Generation** | olympiccoder-32b | Gemma 3 27B | OlympicCoder specialized for code generation with Gemma as reliable backup |
 | **Code Review** | olympiccoder-32b | Gemma 3 27B | Using a code-specific model for review improves feedback quality |
 

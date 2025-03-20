@@ -209,9 +209,9 @@ class EnhancedMemorySystem:
         self.model_context_sizes = {
             "deepseek/deepseek-r1-distill-llama-70b:free": 8000,
             "google/gemma-3-27b-it:free": 8000,
-            "google/gemma-3-27b-it:free": 128000,
+            "google/gemma-3-27b-it-128k:free": 128000,
             "open-r1/olympiccoder-32b:free": 8000,
-            "google/gemma-3-27b-it:free": 12000,
+            "google/gemma-3-27b-chat:free": 12000,
             "meta-llama/llama-guard-3-8b": 8000
         }
                 

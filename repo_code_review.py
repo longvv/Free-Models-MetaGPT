@@ -335,14 +335,26 @@ class RepoReviewer:
         backup_config = task_config.get("backup", {})
         
         # Use more reliable mistral model
-        mistral_task_config = {
-            "primary": {
-                "model": "mistralai/mistral-7b-instruct",
-                "temperature": 0.1,
-                "max_tokens": 4000
-            },
-            "backup": backup_config
-        }
+        code_review_task_config = self.config.get("TASK_MODEL_MAPPING", {}).get("code_review", {})
+        if code_review_task_config:
+            review_task_config = {
+                "primary": code_review_task_config.get("primary", {
+                    "model": "open-r1/olympiccoder-32b:free",  # Default if not in config
+                    "temperature": 0.1,
+                    "max_tokens": 4000
+                }),
+                "backup": code_review_task_config.get("backup", backup_config)
+            }
+        else:
+            # Fallback if no code review config found
+            review_task_config = {
+                "primary": {
+                    "model": "google/gemma-3-27b-it:free",  # Default to a common free model
+                    "temperature": 0.1,
+                    "max_tokens": 4000
+                },
+                "backup": backup_config
+            }
         
         # Prepare review prompts based on depth
         if self.review_depth == "basic":
