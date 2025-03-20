@@ -423,7 +423,7 @@ class RepoReviewer:
             try:
                 response = await self.adapter.generate_completion(
                     messages=messages,
-                    task_config=mistral_task_config
+                    task_config=code_review_task_config
                 )
                 
                 review = response["choices"][0]["message"]["content"]
