@@ -1,7 +1,7 @@
 # Enhanced config.yml for MetaGPT with updated free models from OpenRouter
 
 # Main OpenRouter API key - this will be used for all models
-OPENROUTER_API_KEY: "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"
+OPENROUTER_API_KEY: "YOUR_OPENROUTER_API_KEY"
 
 # Task-based model configuration with primary and backup models
 TASK_MODEL_MAPPING:
