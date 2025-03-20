@@ -37,6 +37,27 @@ class RepositoryLoader:
             "**/*.min.js",
             "**/*.min.css"
         ]
+        # Add patterns from .gitignore if it exists
+        gitignore_path = self.repo_path / ".gitignore"
+        if gitignore_path.exists():
+            try:
+                with open(gitignore_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            # Convert .gitignore pattern to glob pattern
+                            if not line.startswith('/'):
+                                # Pattern applies to any directory
+                                self.ignore_patterns.append(f"**/{line}")
+                            else:
+                                # Pattern is relative to repo root
+                                self.ignore_patterns.append(line[1:])  # Remove leading /
+            except Exception as e:
+                print(f"Error reading .gitignore: {str(e)}")
+        
+        # Add user-provided patterns
+        if ignore_patterns:
+            self.ignore_patterns.extend(ignore_patterns)
         self.max_file_size = max_file_size_kb * 1024  # Convert to bytes
         
     def get_file_list(self) -> List[str]:

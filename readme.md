@@ -127,11 +127,14 @@ Options for the repository review:
 - `--output`: Directory to save review results (default: "./review_output")
 - `--depth`: Review depth, choices are "basic", "standard", or "deep" (default: "standard")
 - `--batch-size`: Number of files to review in each batch (default: 5)
+- `--ignore`: Specify additional patterns to ignore (can be used multiple times)
 
 The repo review generates comprehensive HTML reports including:
 - Repository-level overview
 - Individual file reviews
 - Summary report with key findings and recommendations
+
+Note: The repository review automatically respects `.gitignore` files and skips common non-code directories like `node_modules`, `.git`, `__pycache__`, etc. You can specify additional patterns to ignore using the `--ignore` option.
 
 ## Configuration
 
@@ -306,13 +309,13 @@ If you hit rate limits:
 
 ### Working with Large Repositories
 
-For very large repositories, use batch processing:
+For very large repositories, use batch processing and consider ignoring non-essential files:
 
 ```bash
-python run_repo_review.py --repo /path/to/large/repo --batch-size 3 --depth basic
+python run_repo_review.py --repo /path/to/large/repo --batch-size 3 --depth basic --ignore "**/*.min.js" --ignore "**/dist/**"
 ```
 
-This processes fewer files at once and uses a simpler review depth.
+This processes fewer files at once, uses a simpler review depth, and skips minified JavaScript files and distribution directories. The repository loader already honors `.gitignore` files and has built-in patterns for common directories to skip (like `node_modules` and `__pycache__`).
 
 ### Customizing Prompts
 
