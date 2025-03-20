@@ -65,18 +65,20 @@ async def test_free_models(api_key: str) -> List[str]:
     Returns:
         List of working model names
     """
-    models_to_test = [
-        "mistralai/mistral-7b-instruct:free",
-        "google/gemma-7b-it:free",
-        "meta-llama/llama-2-13b-chat:free",
-        "meta-llama/llama-2-70b-chat:free",
-        "meta-llama/llama-3-8b-instruct:free",
-        "openchat/openchat-7b:free",
-        "open-r1/olympiccoder-32b:free",
-        "anthropic/claude-3-opus-20240229:free",
-        "deepseek/deepseek-r1-distill-llama-70b:free",
-        "google/gemma-3-27b-it:free"
-    ]
+    models_to_test = await get_available_free_models(api_key)
+    if not models_to_test:
+        models_to_test = [
+            "mistralai/mistral-7b-instruct:free",
+            "google/gemma-7b-it:free",
+            "meta-llama/llama-2-13b-chat:free",
+            "meta-llama/llama-2-70b-chat:free",
+            "meta-llama/llama-3-8b-instruct:free",
+            "openchat/openchat-7b:free",
+            "open-r1/olympiccoder-32b:free",
+            "anthropic/claude-3-opus-20240229:free",
+            "deepseek/deepseek-r1-distill-llama-70b:free",
+            "google/gemma-3-27b-it:free"
+        ]
     
     print("Testing models with :free suffix...")
     working_models = []
@@ -87,6 +89,44 @@ async def test_free_models(api_key: str) -> List[str]:
     
     return working_models
 
+async def get_available_free_models(api_key: str) -> List[str]:
+    """Fetch all available free models dynamically.
+    
+    Args:
+        api_key: OpenRouter API key
+        
+    Returns:
+        List of available free model IDs
+    """
+    url = "https://openrouter.ai/api/v1/models"
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    models = data.get("data", [])
+                    
+                    # Filter for free models
+                    free_models = [
+                        model.get("id") 
+                        for model in models 
+                        if model.get("pricing", {}).get("prompt") == 0
+                    ]
+                    
+                    return free_models
+                else:
+                    print(f"Error fetching models: {response.status}")
+                    return []
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return []
+    
 async def main():
     # Load config to get API key
     config_path = "config.yml"

@@ -115,7 +115,16 @@ class RepositoryLoader:
         """
         full_path = os.path.join(self.repo_path, file_path)
         
+        # Try to detect if file is binary
         try:
+            with open(full_path, 'rb') as f:
+                is_binary = b'\0' in f.read(1024)
+                
+            if is_binary:
+                print(f"Skipping binary file: {file_path}")
+                return None
+                
+            # Try to read as text
             with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
                 return f.read()
         except Exception as e:

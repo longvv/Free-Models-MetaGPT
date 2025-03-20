@@ -26,81 +26,33 @@ async def list_models(config_path: str):
     adapter = EnhancedOpenRouterAdapter(config)
     
     print("Fetching available models from OpenRouter...")
-    # First, get all models to see if the API connection works
-    all_models = await adapter.get_available_models()
     
-    # If we have model-specific keys, list those models
-    model_keys = []
-    for task_name, task_config in config.get("TASK_MODEL_MAPPING", {}).items():
-        primary_config = task_config.get("primary", {})
-        backup_config = task_config.get("backup", {})
+    try:
+        # Get all models
+        all_models = await adapter.get_available_models()
         
-        if primary_config.get("model") and primary_config.get("api_key"):
-            model_keys.append((primary_config.get("model"), primary_config.get("api_key")))
-            
-        if backup_config.get("model") and backup_config.get("api_key"):
-            model_keys.append((backup_config.get("model"), backup_config.get("api_key")))
-    
-    print(f"\n{'=' * 60}")
-    print(f"Found {len(all_models)} total models")
-    print(f"You have {len(model_keys)} models with specific API keys configured:")
-    print(f"{'=' * 60}")
-    
-    for model_name, key in model_keys:
-        key_short = f"{key[:10]}...{key[-5:]}" if key else "None"
-        print(f"Model: {model_name}")
-        print(f"API Key: {key_short}")
-        print(f"{'-' * 40}")
+        # Get free models
+        free_models = await adapter.get_free_models()
         
-    return all_models
-    """List available free models from OpenRouter.
-    
-    Args:
-        config_path: Path to configuration file
-    """
-    # Load config
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-        
-    # Initialize OpenRouter adapter
-    adapter = EnhancedOpenRouterAdapter(config)
-    
-    print("Fetching available models from OpenRouter...")
-    # First, get all models to see if the API connection works
-    all_models = await adapter.get_available_models()
-    
-    # If we have model-specific keys, list those models
-    model_keys = []
-    for task_name, task_config in config.get("TASK_MODEL_MAPPING", {}).items():
-        primary_config = task_config.get("primary", {})
-        backup_config = task_config.get("backup", {})
-        
-        if primary_config.get("model") and primary_config.get("api_key"):
-            model_keys.append((primary_config.get("model"), primary_config.get("api_key")))
-            
-        if backup_config.get("model") and backup_config.get("api_key"):
-            model_keys.append((backup_config.get("model"), backup_config.get("api_key")))
-    
-    print(f"\n{'=' * 60}")
-    print(f"Found {len(all_models)} total models")
-    print(f"You have {len(model_keys)} models with specific API keys configured:")
-    print(f"{'=' * 60}")
-    
-    for model_name, key in model_keys:
-        key_short = f"{key[:10]}...{key[-5:]}" if key else "None"
-        print(f"Model: {model_name}")
-        print(f"API Key: {key_short}")
-        print(f"{'-' * 40}")
-    
-    for i, model in enumerate(free_models, 1):
-        model_id = model.get("id", "Unknown")
-        context_length = model.get("context_length", "Unknown")
-        print(f"{i}. {model_id}")
-        print(f"   Context length: {context_length}")
-        print(f"   Description: {model.get('description', 'No description')}")
+        # Display API key info
+        print(f"\n{'=' * 60}")
+        print(f"Found {len(all_models)} total models")
+        print(f"Found {len(free_models)} free models")
         print(f"{'=' * 60}")
-    
-    return free_models
+        
+        # Display free models
+        for i, model in enumerate(free_models, 1):
+            model_id = model.get("id", "Unknown")
+            context_length = model.get("context_length", "Unknown")
+            print(f"{i}. {model_id}")
+            print(f"   Context length: {context_length}")
+            print(f"   Description: {model.get('description', 'No description')}")
+            print(f"{'=' * 60}")
+        
+        return free_models
+    except Exception as e:
+        print(f"Error fetching models: {str(e)}")
+        return []
 
 async def update_config(config_path: str):
     """Update configuration with available free models.
@@ -203,6 +155,18 @@ async def run_project(config_path: str, idea: str, parallel: bool = False, works
     print(f"Running project with idea: {idea}")
     print(f"Parallel mode: {parallel}")
     
+    # Check model availability before starting
+    all_available, unavailable_models = await check_model_availability(config_path)
+    if not all_available:
+        print("WARNING: Some configured models are not available:")
+        for model in unavailable_models:
+            print(f"  - {model}")
+        print("The system will attempt to use backup models, but you may want to update your configuration.")
+        confirm = input("Continue anyway? (y/n): ")
+        if confirm.lower() != 'y':
+            print("Operation cancelled.")
+            return None
+    
     # Initialize orchestrator
     orchestrator = EnhancedTaskOrchestrator(config_path)
     
@@ -229,6 +193,46 @@ async def run_project(config_path: str, idea: str, parallel: bool = False, works
     
     return results
 
+async def check_model_availability(config_path: str):
+    """Check if configured models are available.
+    
+    Args:
+        config_path: Path to configuration file
+    
+    Returns:
+        Tuple of (all_available, unavailable_models)
+    """
+    # Load config
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Initialize OpenRouter adapter
+    adapter = EnhancedOpenRouterAdapter(config)
+    
+    # Get available models
+    try:
+        available_models = await adapter.get_available_models()
+        available_ids = [model.get("id") for model in available_models]
+        
+        # Check models in config
+        unavailable_models = []
+        task_model_mapping = config.get("TASK_MODEL_MAPPING", {})
+        
+        for task, task_config in task_model_mapping.items():
+            primary_model = task_config.get("primary", {}).get("model")
+            backup_model = task_config.get("backup", {}).get("model")
+            
+            if primary_model and primary_model not in available_ids:
+                unavailable_models.append(f"Primary model for {task}: {primary_model}")
+                
+            if backup_model and backup_model not in available_ids:
+                unavailable_models.append(f"Backup model for {task}: {backup_model}")
+        
+        return len(unavailable_models) == 0, unavailable_models
+    except Exception as e:
+        print(f"Error checking model availability: {str(e)}")
+        return False, ["Could not check model availability due to API error"]
+    
 def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(description="Enhanced Free Models MetaGPT")

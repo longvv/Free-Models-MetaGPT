@@ -123,3 +123,9 @@ WORKFLOW_STAGES:
     output: "implementation_plan"
     
   - task: "code_generation"
+    input: "implementation_plan"
+    output: "source_code"
+    
+  - task: "code_review"
+    input: "source_code"
+    output: "review_comments"
