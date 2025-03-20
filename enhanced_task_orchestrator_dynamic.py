@@ -43,6 +43,9 @@ class DynamicTaskOrchestrator:
         validator_config = self.config.get("VALIDATORS", {})
         self.validator = ValidationSystem(validator_config)
         
+        # Flag to enable/disable validation
+        self.validation_enabled = True
+        
         # Task queue
         self.task_queue = asyncio.Queue()
         
@@ -114,51 +117,54 @@ class DynamicTaskOrchestrator:
             
             result = response["choices"][0]["message"]["content"]
             
-            # Validate result
-            validation_config = task_config.get("validation", {})
-            is_valid, validation_message = await self.validator.validate(
-                result, 
-                task_name, 
-                validation_config
-            )
-            
-            if not is_valid:
-                # If validation fails and retry is enabled
-                if validation_config.get("retry_on_failure", True):
-                    max_retries = validation_config.get("max_retries", 3)
-                    
-                    for retry in range(max_retries):
-                        # Update message with validation feedback
-                        retry_message = f"{full_input}\n\nThe previous response failed validation: {validation_message}\n\nPlease fix the issues and try again."
+            # Validate result if validation is enabled
+            if self.validation_enabled:
+                validation_config = task_config.get("validation", {})
+                is_valid, validation_message = await self.validator.validate(
+                    result, 
+                    task_name, 
+                    validation_config
+                )
+                
+                if not is_valid:
+                    # If validation fails and retry is enabled
+                    if validation_config.get("retry_on_failure", True):
+                        max_retries = validation_config.get("max_retries", 3)
                         
-                        messages = [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": retry_message}
-                        ]
-                        
-                        # Generate new completion
-                        print(f"Retry {retry+1}/{max_retries} for {task_name} due to validation failure")
-                        response = await self.adapter.generate_completion(
-                            messages=messages,
-                            task_config=task_config
-                        )
-                        
-                        result = response["choices"][0]["message"]["content"]
-                        
-                        # Validate again
-                        is_valid, validation_message = await self.validator.validate(
-                            result, 
-                            task_name, 
-                            validation_config
-                        )
-                        
-                        if is_valid:
-                            print(f"Validation successful after retry {retry+1}")
-                            break
+                        for retry in range(max_retries):
+                            # Update message with validation feedback
+                            retry_message = f"{full_input}\n\nThe previous response failed validation: {validation_message}\n\nPlease fix the issues and try again."
                             
-                    if not is_valid:
-                        print(f"Validation failed after {max_retries} retries: {validation_message}")
-                        # Proceed anyway with the last result
+                            messages = [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": retry_message}
+                            ]
+                            
+                            # Generate new completion
+                            print(f"Retry {retry+1}/{max_retries} for {task_name} due to validation failure")
+                            response = await self.adapter.generate_completion(
+                                messages=messages,
+                                task_config=task_config
+                            )
+                            
+                            result = response["choices"][0]["message"]["content"]
+                            
+                            # Validate again
+                            is_valid, validation_message = await self.validator.validate(
+                                result, 
+                                task_name, 
+                                validation_config
+                            )
+                            
+                            if is_valid:
+                                print(f"Validation successful after retry {retry+1}")
+                                break
+                                
+                        if not is_valid:
+                            print(f"Validation failed after {max_retries} retries: {validation_message}")
+                            # Proceed anyway with the last result
+            else:
+                print(f"Validation skipped for task: {task_name}")
                 
             return True, result
             

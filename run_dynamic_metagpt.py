@@ -149,7 +149,8 @@ async def update_config(config_path: str):
         print(f"Error updating configuration: {str(e)}")
         return None
 
-async def run_project(config_path: str, idea: str, workflow: str = "standard", parallel: bool = False, workspace_dir: str = "./workspace"):
+async def run_project(config_path: str, idea: str, workflow: str = "standard", parallel: bool = False, 
+                     workspace_dir: str = "./workspace", disable_validation: bool = False):
     """Run a project using the Enhanced Free Models MetaGPT with dynamic configuration.
     
     Args:
@@ -158,14 +159,21 @@ async def run_project(config_path: str, idea: str, workflow: str = "standard", p
         workflow: Name of the workflow to use
         parallel: Whether to run tasks in parallel where possible
         workspace_dir: Directory to save outputs
+        disable_validation: Whether to disable validation of outputs
     """
     print(f"Running project with idea: {idea}")
     print(f"Using workflow: {workflow}")
     print(f"Parallel mode: {parallel}")
+    print(f"Validation: {'Disabled' if disable_validation else 'Enabled'}")
     
     # Initialize orchestrator
     orchestrator = DynamicTaskOrchestrator(config_path)
     await orchestrator.initialize()
+    
+    # Set validation flag in orchestrator
+    if disable_validation and hasattr(orchestrator, 'validator'):
+        # Temporarily disable validation
+        orchestrator.validation_enabled = not disable_validation
     
     # Run workflow
     if parallel:
@@ -238,6 +246,8 @@ def main():
     run_parser.add_argument("--parallel", action="store_true", help="Run tasks in parallel where possible")
     run_parser.add_argument("--workspace", default="./workspace", help="Directory to save outputs")
     run_parser.add_argument("--config", default="config.yml", help="Path to configuration file")
+    # Add the disable-validation flag
+    run_parser.add_argument("--disable-validation", action="store_true", help="Disable validation of outputs")
     
     args = parser.parse_args()
     
@@ -307,7 +317,14 @@ def main():
         os.makedirs(workspace_dir, exist_ok=True)
         
         # Run project
-        asyncio.run(run_project(args.config, args.idea, args.workflow, args.parallel, workspace_dir))
+        asyncio.run(run_project(
+            args.config, 
+            args.idea, 
+            args.workflow, 
+            args.parallel, 
+            workspace_dir,
+            args.disable_validation
+        ))
 
 if __name__ == "__main__":
     main()
