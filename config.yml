@@ -8,14 +8,12 @@ TASK_MODEL_MAPPING:
   requirements_analysis:
     primary:
       model: "deepseek/deepseek-r1-distill-llama-70b:free"
-      # Removed model-specific API key
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a skilled product manager analyzing project requirements. Extract clear, actionable requirements from user input and organize them in a structured format. Focus on clarity and completeness."
     backup:
       model: "google/gemma-3-27b-it:free"
-      # Removed model-specific API key
       temperature: 0.1
       max_tokens: 3000
       context_window: 8000
@@ -23,18 +21,15 @@ TASK_MODEL_MAPPING:
     validation:
       schema: "requirements_schema.json"
       required_sections: ["Functional Requirements", "Non-Functional Requirements", "Constraints"]
-  
   system_design:
     primary:
       model: "google/gemma-3-27b-it:free"
-      # Removed model-specific API key
       temperature: 0.2
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a software architect designing systems. Based on the requirements, create a high-level architecture with components, interfaces, and data flows. Be concise and focus on the most important design decisions."
     backup:
       model: "deepseek/deepseek-r1-distill-llama-70b:free"
-      # Removed model-specific API key
       temperature: 0.2
       max_tokens: 4000
       context_window: 8000 
@@ -42,18 +37,16 @@ TASK_MODEL_MAPPING:
     validation:
       schema: "design_schema.json"
       required_sections: ["Architecture Overview", "Components", "Interfaces"]
-  
   implementation_planning:
     primary:
       model: "deepseek/deepseek-r1-distill-llama-70b:free"
-      # Removed model-specific API key
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a technical lead planning software implementation. Break down the architectural design into specific implementation tasks, focusing on technical details and dependencies."
     backup:
       model: "google/gemma-3-27b-it:free"
-      # Removed model-specific API key
+      
       temperature: 0.1
       max_tokens: 4096
       context_window: 128000
@@ -61,18 +54,15 @@ TASK_MODEL_MAPPING:
     validation:
       schema: "implementation_schema.json"
       required_sections: ["Tasks", "Dependencies", "Timeline"]
-  
   code_generation:
     primary:
       model: "open-r1/olympiccoder-32b:free"
-      # Removed model-specific API key
       temperature: 0.2
       max_tokens: 8000
       context_window: 8000
       system_prompt: "You are a skilled software engineer. Generate clean, maintainable code based on the implementation plan. Include helpful comments and follow best practices."
     backup:
       model: "google/gemma-3-27b-it:free"
-      # Removed model-specific API key
       temperature: 0.2
       max_tokens: 6000
       context_window: 12000
@@ -81,18 +71,15 @@ TASK_MODEL_MAPPING:
       syntax_check: true
       test_generation: true
       required_patterns: ["def", "class", "import"]
-  
   code_review:
     primary:
       model: "open-r1/olympiccoder-32b:free"
-      # Removed model-specific API key
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
       system_prompt: "You are a code reviewer focused on quality and correctness. Review the provided code for bugs, edge cases, and style issues. Suggest specific improvements."
     backup:
       model: "google/gemma-3-27b-it:free"
-      # Removed model-specific API key
       temperature: 0.1
       max_tokens: 4000
       context_window: 8000
