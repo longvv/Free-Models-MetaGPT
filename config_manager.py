@@ -28,6 +28,8 @@ class ModelRegistry:
             "code_review": ["open-r1/olympiccoder", "google/gemma-3-27b", "deepseek/deepseek-r1-distill-llama-70b"]
         }
         
+    # This patch should be applied to the ModelRegistry class in config_manager.py
+
     async def fetch_available_models(self) -> Dict[str, Any]:
         """Fetch available models from OpenRouter API.
         
@@ -51,15 +53,57 @@ class ModelRegistry:
                     # Organize models by ID
                     self.available_models = {model.get("id"): model for model in data.get("data", [])}
                     
-                    # Filter free models
-                    self.free_models = {
-                        model_id: model_data for model_id, model_data in self.available_models.items()
-                        if model_data.get("pricing", {}).get("prompt") == 0
-                    }
+                    # Filter free models: Look for models with ':free' suffix
+                    self.free_models = {}
+                    for model_id, model_data in self.available_models.items():
+                        if model_id.endswith(':free'):
+                            self.free_models[model_id] = model_data
+                    
+                    # If no free models detected, use fallback free models
+                    if not self.free_models:
+                        print("Warning: No free models detected from API. Using fallback list.")
+                        fallback_free_models = [
+                            "google/gemma-3-27b-it:free", 
+                            "deepseek/deepseek-r1-distill-llama-70b:free",
+                            "open-r1/olympiccoder-32b:free"
+                        ]
+                        
+                        for model_id in fallback_free_models:
+                            # Check if this model exists in available models
+                            if model_id in self.available_models:
+                                self.free_models[model_id] = self.available_models[model_id]
+                            else:
+                                # Create minimal info for fallback model
+                                self.free_models[model_id] = {
+                                    "id": model_id,
+                                    "context_length": 8000,
+                                    "description": "Fallback free model"
+                                }
+                    
+                    print(f"Found {len(self.available_models)} total models")
+                    print(f"Found {len(self.free_models)} free models")
                     
                     return self.available_models
         except Exception as e:
             print(f"Error fetching models: {str(e)}")
+            
+            # Use fallback free models
+            fallback_free_models = [
+                "google/gemma-3-27b-it:free", 
+                "deepseek/deepseek-r1-distill-llama-70b:free",
+                "open-r1/olympiccoder-32b:free"
+            ]
+            
+            # Create minimal info for fallback models
+            self.free_models = {}
+            for model_id in fallback_free_models:
+                self.free_models[model_id] = {
+                    "id": model_id,
+                    "context_length": 8000,
+                    "description": "Fallback free model"
+                }
+                
+            print(f"Using {len(self.free_models)} fallback free models")
             return {}
     
     def get_best_model_for_task(self, task: str, free_only: bool = True) -> Tuple[str, str]:
