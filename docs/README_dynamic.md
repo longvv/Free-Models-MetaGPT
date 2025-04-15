@@ -179,9 +179,9 @@ You can customize how models are selected for specific tasks by modifying the `m
 
 ```python
 model_capabilities = {
-    "requirements_analysis": ["deepseek-70b", "gemma-27b", "claude"],
-    "system_design": ["gemma-27b", "deepseek-70b", "claude"],
-    "code_generation": ["olympiccoder", "gemma-27b", "deepseek-70b"],
+    "requirements_analysis": ["deepseek-685b", "gemma-27b", "claude"],
+    "system_design": ["gemma-27b", "deepseek-685b", "claude"],
+    "code_generation": ["olympiccoder", "gemma-27b", "deepseek-685b"],
     # Add custom tasks here
 }
 ```

@@ -28,7 +28,7 @@ async def test_api_key(api_key):
     
     # Use a reliable model for testing
     payload = {
-        "model": "google/gemma-3-27b-it:free",
+        "model": "deepseek/deepseek-chat-v3-0324:free",
         "messages": [
             {"role": "user", "content": "Say hello!"}
         ],

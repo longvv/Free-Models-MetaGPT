@@ -148,16 +148,16 @@ Configure which models to use for each development stage:
 TASK_MODEL_MAPPING:
   requirements_analysis:
     primary:
-      model: "deepseek/deepseek-r1-distill-llama-70b:free"
+      model: "deepseek/deepseek-chat-v3-0324:free"
       temperature: 0.1
-      max_tokens: 4000
-      context_window: 8000
+      max_tokens: 128000
+      context_window: 128000
       system_prompt: "You are a skilled product manager analyzing project requirements..."
     backup:
-      model: "google/gemma-3-27b-it:free"
+      model: "deepseek/deepseek-chat-v3-0324:free"
       temperature: 0.1
-      max_tokens: 3000
-      context_window: 8000
+      max_tokens: 128000
+      context_window: 128000
       system_prompt: "You are a skilled product manager..."
     validation:
       schema: "requirements_schema.json"

@@ -339,9 +339,9 @@ class RepoReviewer:
         if code_review_task_config:
             review_task_config = {
                 "primary": code_review_task_config.get("primary", {
-                    "model": "open-r1/olympiccoder-32b:free",  # Default if not in config
+                    "model": "google/gemini-2.5-pro-exp-03-25:free",  # Default if not in config
                     "temperature": 0.1,
-                    "max_tokens": 4000
+                    "max_tokens": 1000000
                 }),
                 "backup": code_review_task_config.get("backup", backup_config)
             }
@@ -349,9 +349,9 @@ class RepoReviewer:
             # Fallback if no code review config found
             review_task_config = {
                 "primary": {
-                    "model": "google/gemma-3-27b-it:free",  # Default to a common free model
+                    "model": "deepseek/deepseek-chat-v3-0324:free",  # Default to a common free model
                     "temperature": 0.1,
-                    "max_tokens": 4000
+                    "max_tokens": 128000
                 },
                 "backup": backup_config
             }
