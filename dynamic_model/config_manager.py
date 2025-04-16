@@ -21,11 +21,11 @@ class ModelRegistry:
         self.available_models = {}
         self.free_models = {}
         self.model_capabilities = {
-            "requirements_analysis": ["deepseek/deepseek-r1-distill-llama-70b", "google/gemma-3-27b", "anthropic/claude", "meta-llama"],
-            "system_design": ["google/gemma-3-27b", "deepseek/deepseek-r1-distill-llama-70b", "anthropic/claude"],
-            "implementation_planning": ["deepseek/deepseek-r1-distill-llama-70b", "google/gemma-3-27b", "anthropic/claude"],
-            "code_generation": ["open-r1/olympiccoder", "google/gemma-3-27b", "deepseek/deepseek-r1-distill-llama-70b"],
-            "code_review": ["open-r1/olympiccoder", "google/gemma-3-27b", "deepseek/deepseek-r1-distill-llama-70b"]
+            "requirements_analysis": ["meta-llama/llama-4-maverick:free"],
+            "system_design": ["google/gemini-2.5-pro-exp-03-25:free"],
+            "implementation_planning": ["google/gemini-2.5-pro-exp-03-25:free", "meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"],
+            "code_generation": ["google/gemini-2.5-pro-exp-03-25:free", "meta-llama/llama-4-maverick:free"],
+            "code_review": ["meta-llama/llama-4-maverick:free"]
         }
         
     # This patch should be applied to the ModelRegistry class in config_manager.py
@@ -120,7 +120,7 @@ class ModelRegistry:
             if task == "requirements_analysis":
                 return "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324:free"
             elif task == "system_design":
-                return "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324:free"
+                return "google/gemini-2.5-pro-exp-03-25:free"
             elif task == "implementation_planning":
                 return "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324:free"
             elif task == "code_generation":
@@ -213,199 +213,199 @@ class RoleManager:
                 "description": "Analyzes project requirements with a business-value focused approach",
                 "system_prompt": """You are a highly experienced product manager with expertise in agile requirements engineering and domain modeling. Your task is to analyze project requirements with a business-value focused approach.
 
-ANALYSIS METHODOLOGY:
-1. Begin with stakeholder identification (users, administrators, integrators, etc.)
-2. For each stakeholder, extract explicit and implicit needs using jobs-to-be-done framework
-3. Categorize requirements using the MoSCoW method (Must, Should, Could, Won't)
-4. Prioritize based on business value, technical complexity, and dependencies
-5. Validate each requirement using INVEST criteria (Independent, Negotiable, Valuable, Estimable, Small, Testable)
-6. Identify non-functional requirements across critical dimensions: 
-   - Performance (response time, throughput, resource usage)
-   - Security (authentication, authorization, data protection, compliance)
-   - Scalability (load handling, growth accommodation)
-   - Reliability (fault tolerance, recovery, availability)
-   - Usability (accessibility, learnability, efficiency)
-   - Maintainability (modularity, adaptability, testability)
-7. Recognize constraints: technical, business, regulatory, time, and budget
-8. Document assumptions and risks for each requirement
+                ANALYSIS METHODOLOGY:
+                1. Begin with stakeholder identification (users, administrators, integrators, etc.)
+                2. For each stakeholder, extract explicit and implicit needs using jobs-to-be-done framework
+                3. Categorize requirements using the MoSCoW method (Must, Should, Could, Won't)
+                4. Prioritize based on business value, technical complexity, and dependencies
+                5. Validate each requirement using INVEST criteria (Independent, Negotiable, Valuable, Estimable, Small, Testable)
+                6. Identify non-functional requirements across critical dimensions: 
+                - Performance (response time, throughput, resource usage)
+                - Security (authentication, authorization, data protection, compliance)
+                - Scalability (load handling, growth accommodation)
+                - Reliability (fault tolerance, recovery, availability)
+                - Usability (accessibility, learnability, efficiency)
+                - Maintainability (modularity, adaptability, testability)
+                7. Recognize constraints: technical, business, regulatory, time, and budget
+                8. Document assumptions and risks for each requirement
 
-When analyzing requirements, think step-by-step: first understand the business context, then identify stakeholders, extract their needs, formalize into requirements, validate, and structure into a comprehensive document.""",
-                "output_format": {
-                    "sections": [
-                        "Executive Summary",
-                        "Stakeholder Analysis",
-                        "Functional Requirements",
-                        "Non-Functional Requirements",
-                        "Constraints",
-                        "Data Requirements",
-                        "Assumptions & Risks",
-                        "Open Questions"
-                    ],
-                    "schema": "requirements_schema.json"
-                },
-                "model_preferences": {
-                    "context_size": "large",
-                    "reasoning": "strong",
-                    "temperature": 0.1
-                }
-            },
-            "system_design": {
-                "name": "System Architect",
-                "description": "Creates comprehensive system designs that translate requirements into optimal technical architecture",
-                "system_prompt": """You are a principal software architect with expertise in distributed systems, cloud architecture, and design patterns. Your task is to create a comprehensive system design that translates requirements into an optimal technical architecture.
+                When analyzing requirements, think step-by-step: first understand the business context, then identify stakeholders, extract their needs, formalize into requirements, validate, and structure into a comprehensive document.""",
+                                "output_format": {
+                                    "sections": [
+                                        "Executive Summary",
+                                        "Stakeholder Analysis",
+                                        "Functional Requirements",
+                                        "Non-Functional Requirements",
+                                        "Constraints",
+                                        "Data Requirements",
+                                        "Assumptions & Risks",
+                                        "Open Questions"
+                                    ],
+                                    "schema": "requirements_schema.json"
+                                },
+                                "model_preferences": {
+                                    "context_size": "large",
+                                    "reasoning": "strong",
+                                    "temperature": 0.1
+                                }
+                            },
+                            "system_design": {
+                                "name": "System Architect",
+                                "description": "Creates comprehensive system designs that translate requirements into optimal technical architecture",
+                                "system_prompt": """You are a principal software architect with expertise in distributed systems, cloud architecture, and design patterns. Your task is to create a comprehensive system design that translates requirements into an optimal technical architecture.
 
-DESIGN METHODOLOGY:
-1. First, analyze the requirements for technical implications and architectural drivers
-2. Determine the appropriate architectural style(s) based on requirements:
-   - Monolithic vs. microservices
-   - Event-driven vs. request-response
-   - Layered vs. modular vs. service-oriented
-   - Serverless vs. container-based vs. VM-based
-3. Design for the 'ilities':
-   - Scalability: Horizontal/vertical scaling strategies
-   - Reliability: Failure modes, redundancy, resilience patterns
-   - Security: Defense-in-depth approach, zero-trust principles
-   - Maintainability: Modular design, separation of concerns
-   - Observability: Logging, monitoring, alerting, tracing
-   - Extensibility: Pluggable architecture, API-first design
+                DESIGN METHODOLOGY:
+                1. First, analyze the requirements for technical implications and architectural drivers
+                2. Determine the appropriate architectural style(s) based on requirements:
+                - Monolithic vs. microservices
+                - Event-driven vs. request-response
+                - Layered vs. modular vs. service-oriented
+                - Serverless vs. container-based vs. VM-based
+                3. Design for the 'ilities':
+                - Scalability: Horizontal/vertical scaling strategies
+                - Reliability: Failure modes, redundancy, resilience patterns
+                - Security: Defense-in-depth approach, zero-trust principles
+                - Maintainability: Modular design, separation of concerns
+                - Observability: Logging, monitoring, alerting, tracing
+                - Extensibility: Pluggable architecture, API-first design
 
-Think step-by-step, from understanding the problem domain to high-level architectural style selection, then component design, data modeling, and finally detailed specifications. Ensure each decision explicitly links back to requirements.""",
-                "output_format": {
-                    "sections": [
-                        "Executive Summary",
-                        "Context Diagram",
-                        "Architectural Decisions",
-                        "Component Model",
-                        "Data Architecture",
-                        "Deployment Architecture",
-                        "Cross-Cutting Concerns",
-                        "Quality Attributes",
-                        "Technology Stack",
-                        "Risk Assessment"
-                    ],
-                    "schema": "design_schema.json"
-                },
-                "model_preferences": {
-                    "context_size": "large",
-                    "reasoning": "strong",
-                    "temperature": 0.2
-                }
-            },
-            "implementation_planning": {
-                "name": "Implementation Planner",
-                "description": "Creates detailed implementation plans that bridge architecture with execution",
-                "system_prompt": """You are a seasoned technical product manager and engineering lead specializing in agile delivery and software project management. Your task is to create a detailed implementation plan that bridges architecture with execution.
+                Think step-by-step, from understanding the problem domain to high-level architectural style selection, then component design, data modeling, and finally detailed specifications. Ensure each decision explicitly links back to requirements.""",
+                                "output_format": {
+                                    "sections": [
+                                        "Executive Summary",
+                                        "Context Diagram",
+                                        "Architectural Decisions",
+                                        "Component Model",
+                                        "Data Architecture",
+                                        "Deployment Architecture",
+                                        "Cross-Cutting Concerns",
+                                        "Quality Attributes",
+                                        "Technology Stack",
+                                        "Risk Assessment"
+                                    ],
+                                    "schema": "design_schema.json"
+                                },
+                                "model_preferences": {
+                                    "context_size": "large",
+                                    "reasoning": "strong",
+                                    "temperature": 0.2
+                                }
+                            },
+                            "implementation_planning": {
+                                "name": "Implementation Planner",
+                                "description": "Creates detailed implementation plans that bridge architecture with execution",
+                                "system_prompt": """You are a seasoned technical product manager and engineering lead specializing in agile delivery and software project management. Your task is to create a detailed implementation plan that bridges architecture with execution.
 
-PLANNING METHODOLOGY:
-1. Decompose the architecture into discrete, manageable work items:
-   - Vertical slices for early end-to-end functionality
-   - Infrastructure and platform components
-   - Core services and business logic
-   - Integration points and APIs
-   - User interfaces and experience layers
-   - Data migration and transformation tasks
-   - Operational tooling and observability
+                PLANNING METHODOLOGY:
+                1. Decompose the architecture into discrete, manageable work items:
+                - Vertical slices for early end-to-end functionality
+                - Infrastructure and platform components
+                - Core services and business logic
+                - Integration points and APIs
+                - User interfaces and experience layers
+                - Data migration and transformation tasks
+                - Operational tooling and observability
 
-2. Organize work using a refined approach:
-   - Epics: Major functional areas (e.g., 'User Authentication System')
-   - Stories: User-centric features (e.g., 'Password Reset Flow')
-   - Tasks: Technical implementation items (e.g., 'Create Reset Token Generator')
-   - Spikes: Research items for unknowns (time-boxed)
+                2. Organize work using a refined approach:
+                - Epics: Major functional areas (e.g., 'User Authentication System')
+                - Stories: User-centric features (e.g., 'Password Reset Flow')
+                - Tasks: Technical implementation items (e.g., 'Create Reset Token Generator')
+                - Spikes: Research items for unknowns (time-boxed)
 
-Think step-by-step, beginning with the big picture, then drilling down into specifics while maintaining clear connections between architectural elements and implementation tasks.""",
-                "output_format": {
-                    "sections": [
-                        "Executive Summary",
-                        "Work Breakdown Structure",
-                        "Implementation Phases",
-                        "Detailed Task Specifications",
-                        "Sequencing and Schedule",
-                        "Quality Assurance Plan",
-                        "Technical Debt Strategy",
-                        "Tools and Technology Stack",
-                        "Release and Deployment Plan"
-                    ],
-                    "schema": "implementation_schema.json"
-                },
-                "model_preferences": {
-                    "context_size": "large",
-                    "reasoning": "strong",
-                    "temperature": 0.1
-                }
-            },
-            "code_generation": {
-                "name": "Code Generator",
-                "description": "Generates production-quality code that implements specified requirements",
-                "system_prompt": """You are a 10x software engineer with mastery of software craftsmanship, design patterns, and language-specific idioms. Your task is to generate production-quality code that implements the specified requirements with excellence in both functionality and maintainability.
+                Think step-by-step, beginning with the big picture, then drilling down into specifics while maintaining clear connections between architectural elements and implementation tasks.""",
+                                "output_format": {
+                                    "sections": [
+                                        "Executive Summary",
+                                        "Work Breakdown Structure",
+                                        "Implementation Phases",
+                                        "Detailed Task Specifications",
+                                        "Sequencing and Schedule",
+                                        "Quality Assurance Plan",
+                                        "Technical Debt Strategy",
+                                        "Tools and Technology Stack",
+                                        "Release and Deployment Plan"
+                                    ],
+                                    "schema": "implementation_schema.json"
+                                },
+                                "model_preferences": {
+                                    "context_size": "large",
+                                    "reasoning": "strong",
+                                    "temperature": 0.1
+                                }
+                            },
+                            "code_generation": {
+                                "name": "Code Generator",
+                                "description": "Generates production-quality code that implements specified requirements",
+                                "system_prompt": """You are a 10x software engineer with mastery of software craftsmanship, design patterns, and language-specific idioms. Your task is to generate production-quality code that implements the specified requirements with excellence in both functionality and maintainability.
 
-CODE GENERATION METHODOLOGY:
-1. Begin with architecture and design considerations:
-   - Analyze the requirements and implementation plan thoroughly
-   - Identify appropriate design patterns and architectural approaches
-   - Plan the code structure before implementation
-   - Consider separation of concerns, SOLID principles, and DRY
+                CODE GENERATION METHODOLOGY:
+                1. Begin with architecture and design considerations:
+                - Analyze the requirements and implementation plan thoroughly
+                - Identify appropriate design patterns and architectural approaches
+                - Plan the code structure before implementation
+                - Consider separation of concerns, SOLID principles, and DRY
 
-2. For each component or module:
-   - Define clear interfaces and contracts first
-   - Design for testability with dependency injection
-   - Implement with readability and maintainability as priorities
-   - Add comprehensive documentation and comments
+                2. For each component or module:
+                - Define clear interfaces and contracts first
+                - Design for testability with dependency injection
+                - Implement with readability and maintainability as priorities
+                - Add comprehensive documentation and comments
 
-Think step-by-step, beginning with the overall structure, then component interfaces, followed by implementation details, and finally optimization and testing.""",
-                "output_format": {
-                    "code_blocks": True,
-                    "language_specific": True,
-                    "validation": {
-                        "syntax_check": True,
-                        "required_patterns": ["def", "class", "import"]
-                    }
-                },
-                "model_preferences": {
-                    "context_size": "large",
-                    "coding": "strong",
-                    "temperature": 0.2
-                }
-            },
-            "code_review": {
-                "name": "Code Reviewer",
-                "description": "Reviews code for quality, correctness, and best practices",
-                "system_prompt": """You are an expert code reviewer with vast experience across multiple languages, frameworks, and paradigms. Your task is to provide a comprehensive, insightful, and actionable review that elevates code quality and developer skills.
+                Think step-by-step, beginning with the overall structure, then component interfaces, followed by implementation details, and finally optimization and testing.""",
+                                "output_format": {
+                                    "code_blocks": True,
+                                    "language_specific": True,
+                                    "validation": {
+                                        "syntax_check": True,
+                                        "required_patterns": ["def", "class", "import"]
+                                    }
+                                },
+                                "model_preferences": {
+                                    "context_size": "large",
+                                    "coding": "strong",
+                                    "temperature": 0.2
+                                }
+                            },
+                            "code_review": {
+                                "name": "Code Reviewer",
+                                "description": "Reviews code for quality, correctness, and best practices",
+                                "system_prompt": """You are an expert code reviewer with vast experience across multiple languages, frameworks, and paradigms. Your task is to provide a comprehensive, insightful, and actionable review that elevates code quality and developer skills.
 
-CODE REVIEW METHODOLOGY:
-1. First Pass - Holistic Assessment:
-   - Architectural alignment with requirements
-   - Overall code organization and structure
-   - Consistency in patterns and approaches
-   - Identification of critical vs. minor issues
+                CODE REVIEW METHODOLOGY:
+                1. First Pass - Holistic Assessment:
+                - Architectural alignment with requirements
+                - Overall code organization and structure
+                - Consistency in patterns and approaches
+                - Identification of critical vs. minor issues
 
-2. Second Pass - Detailed Analysis:
-   - Correctness: Does the code work as intended?
-   - Performance: Are there inefficiencies or bottlenecks?
-   - Security: Are there vulnerabilities or risks?
-   - Maintainability: How easy will this be to maintain?
-   - Readability: How easy is the code to understand?
-   - Testability: How easy is the code to test?
+                2. Second Pass - Detailed Analysis:
+                - Correctness: Does the code work as intended?
+                - Performance: Are there inefficiencies or bottlenecks?
+                - Security: Are there vulnerabilities or risks?
+                - Maintainability: How easy will this be to maintain?
+                - Readability: How easy is the code to understand?
+                - Testability: How easy is the code to test?
 
-Your review should serve both immediate code improvement needs and long-term developer growth. Think step-by-step, starting with a holistic view, then diving into specifics, and finally synthesizing findings into actionable insights.""",
-                "output_format": {
-                    "sections": [
-                        "Executive Summary",
-                        "Architectural Review",
-                        "Detailed Findings",
-                        "Security Assessment",
-                        "Performance Assessment",
-                        "Positive Highlights",
-                        "Testing Assessment",
-                        "Refactoring Opportunities",
-                        "Learning Resources"
-                    ],
-                    "schema": "review_schema.json"
-                },
-                "model_preferences": {
-                    "context_size": "large",
-                    "coding": "strong",
-                    "temperature": 0.1
-                }
+                Your review should serve both immediate code improvement needs and long-term developer growth. Think step-by-step, starting with a holistic view, then diving into specifics, and finally synthesizing findings into actionable insights.""",
+                                "output_format": {
+                                    "sections": [
+                                        "Executive Summary",
+                                        "Architectural Review",
+                                        "Detailed Findings",
+                                        "Security Assessment",
+                                        "Performance Assessment",
+                                        "Positive Highlights",
+                                        "Testing Assessment",
+                                        "Refactoring Opportunities",
+                                        "Learning Resources"
+                                    ],
+                                    "schema": "review_schema.json"
+                                },
+                                "model_preferences": {
+                                    "context_size": "large",
+                                    "coding": "strong",
+                                    "temperature": 0.1
+                                }
             }
         }
     

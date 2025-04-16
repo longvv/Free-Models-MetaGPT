@@ -1,0 +1,130 @@
+# Collaborative Workflow Configuration
+# This configuration defines a workflow where multiple expert models interact together
+
+name: collaborative
+description: A collaborative workflow where different expert models interact to analyze requirements, design, implement and review code
+
+# Workflow tasks in sequence
+tasks:
+  - name: requirements_analysis
+    type: collaborative
+    description: Analyze and clarify requirements through a collaborative conversation
+    participants:
+      - role: Requirements Analyst
+        model: meta-llama/llama-4-maverick:free
+        backup_models: ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]
+        system_prompt: "You are an expert in analyzing and clarifying requirements. Focus on understanding user needs, identifying edge cases, and ensuring requirements are complete and unambiguous."
+      - role: Domain Expert
+        model: claude-3-opus-20240229
+        backup_models: ["meta-llama/llama-4-maverick:free", "google/gemini-2.5-pro-exp-03-25:free"]
+        system_prompt: "You have deep knowledge in the problem domain. Provide context, identify domain-specific challenges, and ensure solutions align with domain best practices."
+      - role: User Advocate
+        model: meta-llama/llama-4-maverick:free
+        backup_models: ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]
+        system_prompt: "You represent the end users. Focus on usability, accessibility, and ensuring the solution meets real user needs."
+    validation:
+      required_sections:
+        - Problem Statement
+        - Functional Requirements
+        - Non-Functional Requirements
+        - User Stories
+        - Constraints
+        - Assumptions
+      retry_on_failure: true
+      max_retries: 2
+
+  - name: system_design
+    type: collaborative
+    description: Design the system architecture through a collaborative conversation
+    participants:
+      - role: System Architect
+        model: google/gemini-2.5-pro-exp-03-25:free
+        backup_models: ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]
+        system_prompt: "You are an expert in designing robust software architectures. Focus on component design, interfaces, and ensuring the architecture meets all functional and non-functional requirements."
+      - role: Security Expert
+        model: google/gemini-2.5-pro-exp-03-25:free
+        backup_models: ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]
+        system_prompt: "You specialize in security aspects of software design. Identify potential vulnerabilities and ensure the design incorporates security best practices."
+      - role: Performance Engineer
+        model: google/gemini-2.5-pro-exp-03-25:free
+        backup_models: ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]
+        system_prompt: "You focus on system performance. Identify potential bottlenecks and ensure the design can meet performance requirements."
+    validation:
+      required_sections:
+        - Architecture Overview
+        - Component Design
+        - Data Model
+        - API Design
+        - Security Considerations
+        - Performance Considerations
+      retry_on_failure: true
+      max_retries: 2
+
+  - name: implementation_planning
+    type: collaborative
+    description: Plan the implementation through a collaborative conversation
+    participants:
+      - role: Technical Lead
+        model: google/gemini-2.5-pro-exp-03-25:free
+        system_prompt: "You oversee technical implementation. Focus on technical feasibility, resource allocation, and ensuring the implementation plan is comprehensive."
+      - role: Developer
+        model: meta-llama/llama-4-maverick:free
+        system_prompt: "You are an experienced software developer. Focus on implementation details, coding standards, and technical challenges."
+      - role: QA Engineer
+        model: deepseek/deepseek-chat-v3-0324:free
+        system_prompt: "You specialize in quality assurance. Focus on testability, edge cases, and ensuring the implementation plan includes adequate testing."
+    validation:
+      required_sections:
+        - Implementation Strategy
+        - Task Breakdown
+        - Dependencies
+        - Timeline
+        - Testing Strategy
+        - Risks and Mitigations
+      retry_on_failure: true
+      max_retries: 2
+
+  - name: code_generation
+    type: collaborative
+    description: Generate code through a collaborative conversation
+    participants:
+      - role: Senior Developer
+        model: google/gemini-2.5-pro-exp-03-25:free
+        system_prompt: "You are a senior software developer with extensive experience. Write clean, efficient, and well-documented code that follows best practices."
+      - role: Code Reviewer
+        model: google/gemini-2.5-pro-exp-03-25:free
+        system_prompt: "You are an expert in code review. Focus on code quality, adherence to standards, and identifying potential issues."
+      - role: Technical Writer
+        model: meta-llama/llama-4-maverick:free
+        system_prompt: "You specialize in technical documentation. Ensure code is well-documented with clear comments, docstrings, and usage examples."
+    validation:
+      required_sections:
+        - Code Implementation
+        - Unit Tests
+        - Documentation
+        - Usage Examples
+      retry_on_failure: true
+      max_retries: 2
+
+  - name: code_review
+    type: collaborative
+    description: Review and improve the generated code through a collaborative conversation
+    participants:
+      - role: Code Reviewer
+        model: meta-llama/llama-4-maverick:free
+        system_prompt: "You are an expert in code review. Focus on code quality, adherence to standards, and identifying potential issues."
+      - role: Security Auditor
+        model: meta-llama/llama-4-maverick:free
+        system_prompt: "You specialize in security code reviews. Identify security vulnerabilities and ensure the code follows security best practices."
+      - role: Performance Analyst
+        model: meta-llama/llama-4-maverick:free
+        system_prompt: "You focus on code performance. Identify performance issues and suggest optimizations."
+    validation:
+      required_sections:
+        - Code Quality Assessment
+        - Security Analysis
+        - Performance Analysis
+        - Improvement Recommendations
+        - Final Verdict
+      retry_on_failure: true
+      max_retries: 2

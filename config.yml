@@ -8,7 +8,7 @@ MEMORY_SYSTEM:
   vector_db:
     embedding_model: all-MiniLM-L6-v2
     similarity_threshold: 0.75
-OPENROUTER_API_KEY: "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"
+OPENROUTER_API_KEY: "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"
 RATE_LIMITING:
   backoff_strategy: exponential
   initial_backoff_seconds: 1

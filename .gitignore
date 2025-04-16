@@ -4,3 +4,4 @@ review_output
 workspace
 .mcp-index
 logs
+.env
