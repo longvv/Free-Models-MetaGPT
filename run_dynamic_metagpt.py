@@ -6,12 +6,14 @@ import os
 import sys
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 import yaml
 
 from enhanced_openrouter_adapter import EnhancedOpenRouterAdapter
 from enhanced_task_orchestrator_dynamic import DynamicTaskOrchestrator
 from config_manager import DynamicConfigManager
+from logger import ModelLogger
 
 async def list_models(config_path: str):
     """List available models from OpenRouter.
@@ -19,6 +21,10 @@ async def list_models(config_path: str):
     Args:
         config_path: Path to configuration file
     """
+    # Initialize logger
+    logger = ModelLogger(log_dir="./logs", log_level=logging.INFO)
+    logger.log_processing_step("list_models", f"Initializing with config: {config_path}")
+    
     # Initialize dynamic config manager
     config_manager = DynamicConfigManager(config_path)
     await config_manager.initialize()
@@ -27,14 +33,17 @@ async def list_models(config_path: str):
     api_key = config_manager.config.get("OPENROUTER_API_KEY", "")
     if api_key:
         print(f"Using API key (first 5 chars): {api_key[:5]}...")
+        logger.logger.info(f"Using API key (first 5 chars): {api_key[:5]}...")
     else:
         print("No API key found in configuration.")
+        logger.log_error("Configuration", "No API key found in configuration")
         return []
     
     print("Fetching available models from OpenRouter...")
     
     try:
         # Fetch models
+        logger.log_processing_step("fetch_models", "Fetching available models from OpenRouter")
         await config_manager.model_registry.fetch_available_models()
         
         # Get all models
@@ -59,7 +68,9 @@ async def list_models(config_path: str):
         
         return list(free_models.keys())
     except Exception as e:
-        print(f"Error fetching models: {str(e)}")
+        error_msg = f"Error fetching models: {str(e)}"
+        print(error_msg)
+        logger.log_error("API", error_msg, {"exception": str(e)})
         return []
 
 async def list_roles(config_path: str):
@@ -68,6 +79,10 @@ async def list_roles(config_path: str):
     Args:
         config_path: Path to configuration file
     """
+    # Initialize logger
+    logger = ModelLogger(log_dir="./logs", log_level=logging.INFO)
+    logger.log_processing_step("list_roles", f"Initializing with config: {config_path}")
+    
     # Initialize dynamic config manager
     config_manager = DynamicConfigManager(config_path)
     await config_manager.initialize()
@@ -98,6 +113,10 @@ async def list_workflows(config_path: str):
     Args:
         config_path: Path to configuration file
     """
+    # Initialize logger
+    logger = ModelLogger(log_dir="./logs", log_level=logging.INFO)
+    logger.log_processing_step("list_workflows", f"Initializing with config: {config_path}")
+    
     # Initialize dynamic config manager
     config_manager = DynamicConfigManager(config_path)
     await config_manager.initialize()
@@ -119,6 +138,10 @@ async def update_config(config_path: str):
     Args:
         config_path: Path to configuration file
     """
+    # Initialize logger
+    logger = ModelLogger(log_dir="./logs", log_level=logging.INFO)
+    logger.log_processing_step("update_config", f"Initializing with config: {config_path}")
+    
     # Initialize dynamic config manager
     config_manager = DynamicConfigManager(config_path)
     await config_manager.initialize()
@@ -127,6 +150,7 @@ async def update_config(config_path: str):
     
     try:
         # Generate updated config
+        logger.log_processing_step("generate_config", "Generating updated configuration from available models")
         new_config = await config_manager.generate_config_from_available_models()
         
         # Save new config
@@ -146,11 +170,14 @@ async def update_config(config_path: str):
             
         return new_config
     except Exception as e:
-        print(f"Error updating configuration: {str(e)}")
+        error_msg = f"Error updating configuration: {str(e)}"
+        print(error_msg)
+        logger.log_error("Configuration", error_msg, {"exception": str(e)})
         return None
 
 async def run_project(config_path: str, idea: str, workflow: str = "standard", parallel: bool = False, 
-                     workspace_dir: str = "./workspace", disable_validation: bool = False):
+                     workspace_dir: str = "./workspace", disable_validation: bool = False,
+                     log_dir: str = "./logs", log_level: str = "INFO", no_console_log: bool = False):
     """Run a project using the Enhanced Free Models MetaGPT with dynamic configuration.
     
     Args:
@@ -160,13 +187,31 @@ async def run_project(config_path: str, idea: str, workflow: str = "standard", p
         parallel: Whether to run tasks in parallel where possible
         workspace_dir: Directory to save outputs
         disable_validation: Whether to disable validation of outputs
+        log_dir: Directory to save log files
+        log_level: Logging level
+        no_console_log: Whether to disable console logging
     """
+    # Initialize logger
+    log_level_num = getattr(logging, log_level)
+    logger = ModelLogger(
+        log_dir=log_dir,
+        log_level=log_level_num,
+        console_output=not no_console_log
+    )
+    
+    logger.log_processing_step("run_project", f"Starting project with idea: {idea}")
+    logger.logger.info(f"Using workflow: {workflow}")
+    logger.logger.info(f"Parallel mode: {parallel}")
+    logger.logger.info(f"Validation: {'Disabled' if disable_validation else 'Enabled'}")
+    
     print(f"Running project with idea: {idea}")
     print(f"Using workflow: {workflow}")
     print(f"Parallel mode: {parallel}")
     print(f"Validation: {'Disabled' if disable_validation else 'Enabled'}")
+    print(f"Logs will be saved to: {os.path.abspath(log_dir)}")
     
     # Initialize orchestrator
+    logger.log_processing_step("initialize_orchestrator", f"Initializing with config: {config_path}")
     orchestrator = DynamicTaskOrchestrator(config_path)
     await orchestrator.initialize()
     
@@ -175,21 +220,35 @@ async def run_project(config_path: str, idea: str, workflow: str = "standard", p
         # Temporarily disable validation
         orchestrator.validation_enabled = not disable_validation
     
+    # Attach logger to orchestrator if it has a logger attribute
+    if hasattr(orchestrator, 'logger'):
+        orchestrator.logger = logger
+    
     # Run workflow
-    if parallel:
-        print("Running in parallel mode...")
-        results = await orchestrator.run_parallel_workflow(
-            input_idea=idea,
-            workflow_name=workflow,
-            workspace_dir=workspace_dir
-        )
-    else:
-        print("Running in sequential mode...")
-        results = await orchestrator.run_workflow(
-            input_idea=idea,
-            workflow_name=workflow,
-            workspace_dir=workspace_dir
-        )
+    try:
+        if parallel:
+            print("Running in parallel mode...")
+            logger.log_processing_step("run_workflow", "Starting parallel workflow execution")
+            results = await orchestrator.run_parallel_workflow(
+                input_idea=idea,
+                workflow_name=workflow,
+                workspace_dir=workspace_dir
+            )
+        else:
+            print("Running in sequential mode...")
+            logger.log_processing_step("run_workflow", "Starting sequential workflow execution")
+            results = await orchestrator.run_workflow(
+                input_idea=idea,
+                workflow_name=workflow,
+                workspace_dir=workspace_dir
+            )
+        
+        logger.log_processing_step("workflow_completed", "Workflow completed successfully")
+    except Exception as e:
+        error_msg = f"Error during workflow execution: {str(e)}"
+        print(error_msg)
+        logger.log_error("Workflow", error_msg, {"exception": str(e)})
+        raise
     
     print(f"\nProject completed! Results saved to {workspace_dir}")
     print("Files generated:")
@@ -210,6 +269,10 @@ async def check_workflow_exists(config_path: str, workflow_name: str):
     Returns:
         True if workflow exists, False otherwise
     """
+    # Initialize logger
+    logger = ModelLogger(log_dir="./logs", log_level=logging.INFO)
+    logger.log_processing_step("check_workflow_exists", f"Checking if workflow '{workflow_name}' exists")
+    
     # Initialize dynamic config manager
     config_manager = DynamicConfigManager(config_path)
     await config_manager.initialize()
@@ -248,6 +311,20 @@ def main():
     run_parser.add_argument("--config", default="config.yml", help="Path to configuration file")
     # Add the disable-validation flag
     run_parser.add_argument("--disable-validation", action="store_true", help="Disable validation of outputs")
+    
+    # Add logging options to all parsers
+    for parser_name, parser_obj in [
+        ("list-models", list_parser),
+        ("list-roles", list_roles_parser),
+        ("list-workflows", list_workflows_parser),
+        ("update-config", update_parser),
+        ("run", run_parser)
+    ]:
+        parser_obj.add_argument("--log-dir", default="./logs", help="Directory to save log files")
+        parser_obj.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], 
+                              default="INFO", help="Logging level")
+        parser_obj.add_argument("--no-console-log", action="store_true", 
+                              help="Disable logging to console")
     
     args = parser.parse_args()
     
@@ -305,7 +382,9 @@ def main():
     elif args.command == "run":
         # Check if workflow exists
         if not asyncio.run(check_workflow_exists(args.config, args.workflow)):
-            print(f"Error: Workflow '{args.workflow}' not found.")
+            error_msg = f"Workflow '{args.workflow}' not found"
+            print(f"Error: {error_msg}")
+            logger.log_error("Workflow", error_msg)
             print("Available workflows:")
             workflows = asyncio.run(list_workflows(args.config))
             for workflow in workflows:
@@ -323,7 +402,10 @@ def main():
             args.workflow, 
             args.parallel, 
             workspace_dir,
-            args.disable_validation
+            args.disable_validation,
+            args.log_dir,
+            args.log_level,
+            args.no_console_log
         ))
 
 if __name__ == "__main__":

@@ -62,6 +62,9 @@ class RepoReviewer:
         Returns:
             Review results dictionary
         """
+        from logger import log_processing_step, log_file_processing, log_error
+        
+        log_processing_step("Repository Review", f"Starting review of {self.repo_path}")
         print(f"Analyzing repository: {self.repo_path}")
         repo_info = self.repo_loader.analyze_repository()
         
@@ -76,6 +79,7 @@ class RepoReviewer:
         
         # First, generate repository-level review
         print("Generating repository-level review...")
+        log_processing_step("Repository Level Review", "Generating overall repository assessment")
         repo_level_review = await self._generate_repo_level_review(repo_info)
         
         # Save repository-level review
@@ -130,10 +134,22 @@ class RepoReviewer:
         
         for i in range(0, total_files, self.max_files_per_batch):
             batch = prioritized_files[i:i + self.max_files_per_batch]
-            print(f"Reviewing batch {i//self.max_files_per_batch + 1}/{(total_files + self.max_files_per_batch - 1)//self.max_files_per_batch}...")
+            batch_num = i//self.max_files_per_batch + 1
+            total_batches = (total_files + self.max_files_per_batch - 1)//self.max_files_per_batch
             
-            batch_reviews = await self._review_file_batch(batch)
-            file_reviews.update(batch_reviews)
+            print(f"Reviewing batch {batch_num}/{total_batches}...")
+            log_processing_step("File Batch Review", f"Processing batch {batch_num}/{total_batches} with {len(batch)} files")
+            
+            try:
+                batch_reviews = await self._review_file_batch(batch)
+                file_reviews.update(batch_reviews)
+                
+                # Log successful batch completion
+                log_processing_step("Batch Complete", f"Successfully reviewed batch {batch_num}/{total_batches}")
+            except Exception as e:
+                error_msg = f"Error reviewing batch {batch_num}: {str(e)}"
+                print(error_msg)
+                log_error("Batch Review Error", error_msg, {"batch_number": batch_num, "files": batch})
             
             # Save interim results
             with open(self.output_dir / "file_reviews.json", 'w') as f:
@@ -330,6 +346,7 @@ class RepoReviewer:
         Returns:
             Dictionary mapping file paths to review text
         """
+        from logger import log_file_processing, log_error
         # Get code review task config
         task_config = self.config.get("TASK_MODEL_MAPPING", {}).get("code_review", {})
         backup_config = task_config.get("backup", {})
@@ -392,11 +409,13 @@ class RepoReviewer:
         results = {}
         for file_path in file_paths:
             print(f"  Reviewing file: {file_path}")
+            log_file_processing(file_path, "started")
             
             # Load file content
             content = self.repo_loader.load_file_content(file_path)
             if not content:
                 results[file_path] = "Error: Could not load file content"
+                log_file_processing(file_path, "skipped", "Empty file")
                 continue
                 
             # Create file review prompt
@@ -438,9 +457,15 @@ class RepoReviewer:
                 
                 with open(file_review_dir / f"{safe_filename}.md", 'w') as f:
                     f.write(f"# Code Review: {file_path}\n\n{review}")
+                
+                # Log successful file review
+                log_file_processing(file_path, "completed", f"Review saved to {self.output_dir / 'file_reviews'}")
                     
             except Exception as e:
-                print(f"  Error reviewing file {file_path}: {str(e)}")
+                error_msg = f"  Error reviewing file {file_path}: {str(e)}"
+                print(error_msg)
+                log_error("File Review Error", error_msg, {"file_path": file_path})
+                log_file_processing(file_path, "error", str(e))
                 results[file_path] = f"Error: {str(e)}"
                 
         return results

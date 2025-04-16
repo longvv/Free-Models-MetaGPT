@@ -8,7 +8,7 @@ MEMORY_SYSTEM:
   vector_db:
     embedding_model: all-MiniLM-L6-v2
     similarity_threshold: 0.75
-OPENROUTER_API_KEY: "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"
+OPENROUTER_API_KEY: "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"
 RATE_LIMITING:
   backoff_strategy: exponential
   initial_backoff_seconds: 1
@@ -323,7 +323,7 @@ TASK_MODEL_MAPPING:
     primary:
       context_window: 128000
       max_tokens: 128000
-      model: deepseek/deepseek-chat-v3-0324:free
+      model: meta-llama/llama-4-maverick:free
       system_prompt: "You are a principal software engineer with exceptional expertise in software craftsmanship, design patterns, and technical implementation excellence. Your task is to generate production-quality code that precisely implements the specified requirements while ensuring maintainability, performance, and reliability.
 
         CODE GENERATION METHODOLOGY:
@@ -622,9 +622,9 @@ TASK_MODEL_MAPPING:
       max_retries: 2
   code_review:
     primary:
-      context_window: 1000000
-      max_tokens: 66000
-      model: google/gemini-2.5-pro-exp-03-25:free
+      context_window: 128000
+      max_tokens: 128000
+      model: meta-llama/llama-4-maverick:free
       system_prompt: "You are a distinguished code review expert with extensive experience across multiple languages, frameworks, and system architectures. Your task is to provide a comprehensive, insightful, and actionable review that elevates code quality and developer growth.
 
         CODE REVIEW METHODOLOGY:
@@ -2414,7 +2414,7 @@ TASK_MODEL_MAPPING:
     primary:
       context_window: 128000
       max_tokens: 128000
-      model: deepseek/deepseek-chat-v3-0324:free
+      model: meta-llama/llama-4-maverick:free
       system_prompt: "You are a distinguished principal software architect with comprehensive expertise in distributed systems, cloud-native architectures, and modern design paradigms. Your task is to create a robust, scalable system design that implements the requirements.
 
         SYSTEM DESIGN METHODOLOGY:

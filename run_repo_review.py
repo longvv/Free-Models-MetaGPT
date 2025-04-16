@@ -5,9 +5,11 @@
 import argparse
 import asyncio
 import os
+import logging
 from pathlib import Path
 
 from repo_code_review import RepoReviewer
+from logger import ModelLogger
 
 async def main():
     parser = argparse.ArgumentParser(description="Review a code repository with AI assistance")
@@ -24,12 +26,28 @@ async def main():
     parser.add_argument("--ignore", action="append", default=None, 
                       help="Patterns to ignore (can be specified multiple times)")
     
+    # Logging options
+    parser.add_argument("--log-dir", default="./logs", help="Directory to save log files")
+    parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], 
+                      default="INFO", help="Logging level")
+    parser.add_argument("--no-console-log", action="store_true", 
+                      help="Disable logging to console")
+    
     args = parser.parse_args()
+    
+    # Initialize logger
+    log_level = getattr(logging, args.log_level)
+    logger = ModelLogger(
+        log_dir=args.log_dir,
+        log_level=log_level,
+        console_output=not args.no_console_log
+    )
     
     print(f"Starting repository review for: {args.repo}")
     print(f"Configuration: {args.config}")
     print(f"Output directory: {args.output}")
     print(f"Review depth: {args.depth}")
+    print(f"Logs will be saved to: {os.path.abspath(args.log_dir)}")
     
     reviewer = RepoReviewer(
         config_path=args.config,

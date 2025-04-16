@@ -9,6 +9,9 @@ import time
 from typing import Dict, List, Optional, Union, Any
 from datetime import datetime, timedelta
 
+# Import logging functionality
+from logger import log_model_request, log_model_response, log_error, log_processing_step
+
 class CircuitBreaker:
     """Circuit breaker for API calls to prevent hammering failing services."""
     
@@ -378,13 +381,20 @@ class EnhancedOpenRouterAdapter:
                                 result = await response.json()
                                 rotator.record_success(current_model)
                                 self.rate_limiter.reset_retries(request_key)
+                                
+                                # Log successful API response
+                                log_processing_step("API Response", f"Successful response from {current_model}")
                                 return result
                                 
                             elif response.status == 401:
                                 # Authentication error
                                 error_text = await response.text()
-                                print(f"Authentication error for model {current_model}: {error_text}")
+                                error_msg = f"Authentication error for model {current_model}: {error_text}"
+                                print(error_msg)
                                 print("Please check your OpenRouter API key.")
+                                
+                                # Log authentication error
+                                log_error("Authentication Error", error_msg, {"model": current_model})
                                 
                                 if retries < max_retries:
                                     wait_time = self.rate_limiter.get_backoff_time(request_key)
@@ -396,7 +406,14 @@ class EnhancedOpenRouterAdapter:
                             elif response.status == 429:
                                 # Rate limit hit
                                 error_text = await response.text()
-                                print(f"Rate limit hit: {error_text}")
+                                error_msg = f"Rate limit hit: {error_text}"
+                                print(error_msg)
+                                
+                                # Log rate limit error
+                                log_error("Rate Limit Error", error_msg, {
+                                    "model": current_model,
+                                    "retry_count": retries
+                                })
                                 
                                 # Add dynamic backoff based on response headers
                                 retry_after = response.headers.get("Retry-After")
@@ -408,7 +425,15 @@ class EnhancedOpenRouterAdapter:
                             else:
                                 # Other error
                                 error_text = await response.text()
-                                print(f"OpenRouter API error ({response.status}): {error_text}")
+                                error_msg = f"OpenRouter API error ({response.status}): {error_text}"
+                                print(error_msg)
+                                
+                                # Log API error
+                                log_error("API Error", error_msg, {
+                                    "model": current_model,
+                                    "status_code": response.status,
+                                    "retry_count": retries
+                                })
                                 
                                 rotator.record_failure(current_model)
                                 
@@ -420,7 +445,15 @@ class EnhancedOpenRouterAdapter:
                                     raise Exception(f"OpenRouter API error after {max_retries} retries: {error_text}")
                                     
                 except aiohttp.ClientError as e:
-                    print(f"HTTP error: {str(e)}")
+                    error_msg = f"HTTP error: {str(e)}"
+                    print(error_msg)
+                    
+                    # Log HTTP client error
+                    log_error("HTTP Client Error", error_msg, {
+                        "model": current_model,
+                        "retry_count": retries
+                    })
+                    
                     rotator.record_failure(current_model)
                     
                     if retries < max_retries:
@@ -462,6 +495,10 @@ class EnhancedOpenRouterAdapter:
         temperature = primary_config.get("temperature", 0.7)
         max_tokens = primary_config.get("max_tokens", 2048)
         
+        # Log model request
+        log_model_request(primary_model, messages, task_config)
+        log_processing_step("generate_completion", f"Using model: {primary_model}, backup: {backup_model if backup_model else 'None'}")
+        
         # Special handling for large context window models
         if primary_model == "deepseek/deepseek-chat-v3-0324:free":
             timeout = max(timeout, 300)  # Longer timeout for large context window
@@ -479,13 +516,28 @@ class EnhancedOpenRouterAdapter:
             "max_tokens": max_tokens
         }
         
-        return await self._make_request(
-            endpoint="chat/completions", 
-            payload=payload, 
-            model=primary_model,
-            backup_models=backup_models,
-            timeout=timeout
-        )
+        try:
+            response = await self._make_request(
+                endpoint="chat/completions", 
+                payload=payload, 
+                model=primary_model,
+                backup_models=backup_models,
+                timeout=timeout
+            )
+            
+            # Log successful response
+            log_model_response(primary_model, response)
+            return response
+            
+        except Exception as e:
+            # Log error
+            error_details = {
+                "model": primary_model,
+                "backup_models": backup_models,
+                "message_count": len(messages)
+            }
+            log_error("Model Completion Error", str(e), error_details)
+            raise
     
     async def get_available_models(self) -> List[Dict[str, Any]]:
         """Get list of available models from OpenRouter.
