@@ -1,0 +1,28 @@
+memory:
+  cache:
+    enabled: true
+    ttl_seconds: 3600
+  chunk_size: 1000
+  context_strategy: smart_selection
+  overlap: 100
+  vector_db:
+    embedding_model: all-MiniLM-L6-v2
+    similarity_threshold: 0.75
+rate_limiting:
+  backoff_strategy: exponential
+  initial_backoff_seconds: 1
+  max_backoff_seconds: 60
+  max_parallel_requests: 2
+  requests_per_minute: 10
+validators:
+  module: enhanced_validators
+  syntax:
+    enabled: true
+    retry_on_failure: true
+    max_retries: 3
+  schema:
+    enabled: false
+    schema_dir: ./schemas
+  consistency:
+    enabled: true
+    consistency_threshold: 0.6

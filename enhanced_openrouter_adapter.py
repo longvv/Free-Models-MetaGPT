@@ -260,8 +260,17 @@ class EnhancedOpenRouterAdapter:
             config: Configuration dictionary
             api_key: OpenRouter API key (optional, can be set via env variable)
         """
-        # Load OpenRouter configuration
-        openrouter_config = config.get('OPENROUTER_CONFIG', {})
+        # Load OpenRouter configuration - first handle the case where we might have the full config
+        openrouter_config = {}
+        if 'OPENROUTER_CONFIG' in config:
+            openrouter_config = config.get('OPENROUTER_CONFIG', {})
+        elif 'default_api_key' in config:
+            # This might be the OPENROUTER_CONFIG section directly
+            openrouter_config = config
+            
+        # Print the keys we're using for debugging
+        print(f"OpenRouter config keys: {list(openrouter_config.keys()) if openrouter_config else 'None'}")
+        
         self.default_api_key = api_key or os.getenv("OPENROUTER_API_KEY") or openrouter_config.get('default_api_key')
         self.model_keys = openrouter_config.get('model_keys', {})
         

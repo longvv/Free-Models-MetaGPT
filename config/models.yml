@@ -1,0 +1,37 @@
+api_keys:
+  default: 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
+  model_specific:
+    meta-llama/llama-4-maverick:free: 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
+    google/gemini-2.5-pro-exp-03-25:free: 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
+    deepseek/deepseek-chat-v3-0324:free: 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
+models:
+  capabilities:
+    requirements_analysis:
+    - deepseek/deepseek-chat-v3-0324:free
+    - meta-llama/llama-4-maverick:free
+    - google/gemini-2.5-pro-exp-03-25:free
+    system_design:
+    - deepseek/deepseek-chat-v3-0324:free
+    - meta-llama/llama-4-maverick:free
+    - google/gemini-2.5-pro-exp-03-25:free
+    implementation_planning:
+    - deepseek/deepseek-chat-v3-0324:free
+    - meta-llama/llama-4-maverick:free
+    - google/gemini-2.5-pro-exp-03-25:free
+    code_generation:
+    - deepseek/deepseek-chat-v3-0324:free
+    - meta-llama/llama-4-maverick:free
+    - google/gemini-2.5-pro-exp-03-25:free
+    code_review:
+    - deepseek/deepseek-chat-v3-0324:free
+    - meta-llama/llama-4-maverick:free
+    - google/gemini-2.5-pro-exp-03-25:free
+  fallback_free_models:
+  - google/gemini-2.5-pro-exp-03-25:free
+  - deepseek/deepseek-chat-v3-0324:free
+  - meta-llama/llama-4-maverick:free
+  context_sizes:
+    deepseek/deepseek-chat-v3-0324:free: 128000
+    meta-llama/llama-4-maverick:free: 128000
+    google/gemini-2.5-pro-exp-03-25:free: 128000
+    default: 128000
