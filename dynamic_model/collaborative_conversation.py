@@ -112,7 +112,10 @@ class CollaborativeConversation:
             final_result = await self._compile_final_result(participants)
         
         # Store the full conversation in memory for future reference
-        self.memory.store_conversation(topic, self.conversation_history, final_result)
+        conversation_text = json.dumps({"history": self.conversation_history, "result": final_result})
+        # Use add_document instead which is a method available in EnhancedMemorySystem
+        metadata = {"source": "collaborative_conversation", "topic": topic, "type": "conversation_summary"}
+        self.memory.add_document(conversation_text, metadata)
         
         return True, final_result
     

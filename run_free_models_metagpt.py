@@ -424,7 +424,7 @@ def main():
         if not os.getenv("OPENROUTER_API_KEY"):
             warning_msg = "No OPENROUTER_API_KEY environment variable found"
             print(f"Warning: {warning_msg}")
-            logger.log_error("Configuration", warning_msg)
+            logger.log_error("Configuration", warning_msg, None)
             print("Please set your API key in the configuration file or as an environment variable.")
     
     try:

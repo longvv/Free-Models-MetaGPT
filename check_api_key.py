@@ -2,12 +2,25 @@
 # check_api_key.py
 # Simple script to verify your OpenRouter API key
 
-import os
+import aiohttp
 import asyncio
+import os
 import yaml
 import json
-import aiohttp
 from pathlib import Path
+
+# Load config to get default API key and potentially a default model
+CONFIG_PATH = Path(__file__).parent / "config.yml"
+CONFIG = {}
+if CONFIG_PATH.exists():
+    try:
+        with open(CONFIG_PATH, 'r') as f:
+            CONFIG = yaml.safe_load(f)
+    except Exception as e:
+        print(f"Warning: Could not load config.yml: {e}")
+
+OPENROUTER_CONFIG = CONFIG.get("OPENROUTER_CONFIG", {})
+DEFAULT_API_KEY = OPENROUTER_CONFIG.get("default_api_key")
 
 async def test_api_key(api_key):
     """Test a specific API key with a simple model.
@@ -16,23 +29,24 @@ async def test_api_key(api_key):
         api_key: API key to test
     """
     print(f"Testing OpenRouter API key (first 5 chars): {api_key[:5]}...")
-    
+
+    # Use a model from env var or a common default from config's fallback list
+    test_model = os.getenv("OPENROUTER_TEST_MODEL", CONFIG.get("MODEL_REGISTRY", {}).get("fallback_free_models", ["google/gemini-flash-1.5:free"])[0])
+    print(f"Using model '{test_model}' for API key check.")
+
     url = "https://openrouter.ai/api/v1/chat/completions"
-    
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://metagpt.com",
-        "X-Title": "MetaGPT API Test"
+        "HTTP-Referer": "https://metagpt.com", # Optional: Helps OpenRouter identify traffic source
+        "X-Title": "MetaGPT API Test" # Optional: Helps OpenRouter identify traffic source
     }
-    
-    # Use a reliable model for testing
-    payload = {
-        "model": "deepseek/deepseek-chat-v3-0324:free",
+    data = {
+        "model": test_model,
         "messages": [
-            {"role": "user", "content": "Say hello!"}
+            {"role": "user", "content": "Check API key status."}
         ],
-        "max_tokens": 50
+        "max_tokens": 10
     }
     
     try:
@@ -78,12 +92,10 @@ async def main():
             config = yaml.safe_load(f)
             config_api_key = config.get("OPENROUTER_API_KEY")
     
-    # Use environment variable first, then config file
-    api_key = env_api_key or config_api_key
-    
+    # Use environment variable or default key from config
+    api_key = os.getenv("OPENROUTER_API_KEY") or DEFAULT_API_KEY
     if not api_key:
-        print("❌ ERROR: No OpenRouter API key found.")
-        print("Please set the OPENROUTER_API_KEY environment variable or add it to config.yml")
+        print("Error: OPENROUTER_API_KEY environment variable not set and no default_api_key found in config.yml.")
         return
         
     await test_api_key(api_key)

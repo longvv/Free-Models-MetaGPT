@@ -205,14 +205,10 @@ class EnhancedMemorySystem:
         # Create workspace directory if it doesn't exist
         os.makedirs(workspace_dir, exist_ok=True)
         
-        # Model-specific context sizes for optimizing retrieval
-        self.model_context_sizes = {
-            "deepseek/deepseek-chat-v3-0324:free": 128000,
-            "google/gemma-3-27b-it-128k:free": 128000,
-            "google/gemini-2.5-pro-exp-03-25:free": 1000000,
-            "google/gemma-3-27b-chat:free": 12000,
-            "meta-llama/llama-guard-3-8b": 8000
-        }
+        # Load model context sizes from config, falling back to a default
+        model_registry_config = config.get("MODEL_REGISTRY", {})
+        self.model_context_sizes = model_registry_config.get("model_context_sizes", {})
+        self.default_context_size = self.model_context_sizes.get("default", 8000)
                 
     def _split_text(self, text: str) -> List[str]:
         """Split text into overlapping chunks.
@@ -359,13 +355,14 @@ class EnhancedMemorySystem:
             return ""
         
         # Adjust max_chunks based on model's context window if provided
-        if model and model in self.model_context_sizes:
-            context_size = self.model_context_sizes[model]
-            # For very large context models like Phi-3, allow more chunks
-            if context_size > 32000:  # For extremely large context windows
-                max_chunks = max(max_chunks, 12)
-            elif context_size > 8000:  # For large context windows
-                max_chunks = max(max_chunks, 6)
+        if model:
+            context_size = self.model_context_sizes.get(model, self.default_context_size)
+            # Dynamically adjust max_chunks based on context size
+            if context_size > 64000:  # Very large context
+                max_chunks = max(max_chunks, 10) # Allow more chunks for larger context
+            elif context_size > 16000: # Large context
+                max_chunks = max(max_chunks, 5)
+            # Default max_chunks remains as passed in for smaller contexts
             
         query_embedding = self._create_embedding(query)
         

@@ -4,6 +4,11 @@ import os
 import yaml
 from typing import Dict, List, Tuple, Any, Optional
 from .collaborative_conversation import CollaborativeConversation
+# Import DynamicConfigManager and other components from the parent directory
+from config_manager import DynamicConfigManager, RoleManager, ModelRegistry
+from enhanced_openrouter_adapter import EnhancedOpenRouterAdapter
+from enhanced_memory import EnhancedMemorySystem
+from validators import ValidationSystem
 
 class CollaborativeTaskOrchestrator:
     """Orchestrates tasks using a collaborative conversation between multiple expert models.
@@ -19,37 +24,16 @@ class CollaborativeTaskOrchestrator:
         Args:
             config_path: Path to configuration file
         """
-        from .config_manager import DynamicConfigManager
-        from enhanced_openrouter_adapter import EnhancedOpenRouterAdapter
-        from enhanced_memory import EnhancedMemorySystem
-        from validators import ValidationSystem
-        
         self.config_path = config_path
         
         # Initialize the dynamic configuration manager
         self.config_manager = DynamicConfigManager(config_path)
         
-        # Get base configuration
-        self.config = self.config_manager.config
-        
-        # Initialize OpenRouter adapter
-        self.adapter = EnhancedOpenRouterAdapter(self.config)
-        
-        # Initialize memory system
-        memory_config = self.config.get("MEMORY_SYSTEM", {})
-        self.memory = EnhancedMemorySystem(memory_config)
-        
-        # Initialize validation system
-        validator_config = self.config.get("VALIDATORS", {})
-        self.validator = ValidationSystem(validator_config)
-        
-        # Initialize collaborative conversation system
-        conversation_config = self.config.get("COLLABORATIVE_CONVERSATION", {})
-        self.conversation = CollaborativeConversation(
-            conversation_config,
-            self.adapter,
-            self.memory
-        )
+        # Defer initialization of components requiring config until initialize() is called
+        self.adapter = None
+        self.memory = None
+        self.validator = None
+        self.conversation = None
         
         # Flag to enable/disable validation
         self.validation_enabled = True
@@ -60,6 +44,28 @@ class CollaborativeTaskOrchestrator:
     async def initialize(self) -> None:
         """Initialize the orchestrator with all components."""
         await self.config_manager.initialize()
+        
+        # Now that config is loaded, initialize components
+        # Get the full config to pass to the adapter instead of just the OPENROUTER_CONFIG section
+        full_config = self.config_manager.config
+        # Print the OpenRouter config for debugging
+        openrouter_cfg = full_config.get("OPENROUTER_CONFIG", {})
+        print("OpenRouter Config:", json.dumps(openrouter_cfg, indent=2))
+        # Pass the full config to the adapter so it can access all necessary sections
+        self.adapter = EnhancedOpenRouterAdapter(full_config)
+        
+        memory_config = self.config_manager.get_config_section("MEMORY_SYSTEM") or {}
+        self.memory = EnhancedMemorySystem(memory_config)
+        
+        validator_config = self.config_manager.get_config_section("VALIDATORS") or {}
+        self.validator = ValidationSystem(validator_config)
+        
+        conversation_config = self.config_manager.get_config_section("COLLABORATIVE_CONVERSATION") or {}
+        self.conversation = CollaborativeConversation(
+            conversation_config,
+            self.adapter,
+            self.memory
+        )
     
     async def execute_workflow(self, workflow_name: str, input_data: str) -> Dict[str, Any]:
         """Execute a complete workflow using collaborative conversations between models.
@@ -69,34 +75,33 @@ class CollaborativeTaskOrchestrator:
             input_data: Input data for the workflow
             
         Returns:
-            Dictionary containing results of each task in the workflow
+             Dictionary containing results of each task in the workflow
         """
-        # Check if workflow_name is a file path
-        if os.path.isfile(workflow_name):
-            try:
-                with open(workflow_name, 'r') as f:
-                    workflow_config = yaml.safe_load(f).get('tasks', [])
-                print(f"Loaded workflow configuration from file: {workflow_name}")
-            except Exception as e:
-                print(f"Warning: Workflow file '{workflow_name}' could not be loaded: {str(e)}, using standard workflow")
-                # Get workflow configuration from config manager
-                workflow_config = self.config_manager.get_workflow_stages("collaborative")
-        else:
-            # Get workflow configuration from config manager
-            workflow_config = self.config_manager.get_workflow_stages(workflow_name)
-            if not workflow_config:
-                print(f"Warning: Workflow '{workflow_name}' not found, using standard workflow")
-                workflow_config = self.config_manager.get_workflow_stages("collaborative")
-        
+        # Load workflow configuration using the config manager
+        workflow_config = self.config_manager.get_workflow_stages(workflow_name)
+
         if not workflow_config:
-            raise ValueError(f"No workflow configuration could be found or loaded")
+            # Try loading standard/default if specific one isn't found
+            print(f"Warning: Workflow '{workflow_name}' not found. Trying a default workflow name.")
+            # Use a default workflow name (e.g., 'standard_collaborative' or just 'collaborative')
+            default_workflow_name = "collaborative" # Adjust if your default has a different name
+            workflow_config = self.config_manager.get_workflow_stages(default_workflow_name)
+            if not workflow_config:
+                 raise ValueError(f"No workflow configuration could be found for '{workflow_name}' or the default '{default_workflow_name}'.")
         
         print(f"Executing collaborative workflow: {workflow_name}")
         
         # Initialize results dictionary
         results = {}
         current_input = input_data
+
+        # Store the loaded workflow config for access in other methods
+        self.current_workflow_config = workflow_config
         
+        # Get managers once
+        role_manager = self.config_manager.get_role_manager()
+        model_registry = self.config_manager.get_model_registry()
+
         # Execute each task in the workflow using collaborative conversations
         for task_config in workflow_config:
             task_name = task_config.get("name")
@@ -105,14 +110,54 @@ class CollaborativeTaskOrchestrator:
             print(f"\n=== Executing task: {task_name} (Type: {task_type}) ===")
             
             if task_type == "collaborative":
-                # Get participant configurations for this collaborative task
-                participants = self._get_task_participants(task_name)
-                
+                # Participants are just role names from the workflow file now
+                participant_roles_config = task_config.get("participants", [])
+                if not participant_roles_config:
+                    print(f"Warning: No participants defined for collaborative task '{task_name}' in workflow config.")
+                    results[task_name] = f"Error: No participants defined for task {task_name}"
+                    continue # Skip this task if no participants are defined
+
+                # Enrich participant data with details from config.yml
+                enriched_participants = []
+                for participant_cfg in participant_roles_config:
+                    role_name = participant_cfg.get("role")
+                    if not role_name:
+                        print(f"Warning: Participant config missing 'role' in task '{task_name}'. Skipping.")
+                        continue
+                    
+                    role_info = role_manager.get_role(role_name)
+                    if not role_info:
+                        print(f"Warning: Role '{role_name}' not found in config.yml for task '{task_name}'. Using defaults.")
+                        role_info = {}
+
+                    # Determine models based on task name using the model registry
+                    # Role preferences from config.yml might influence future model selection logic, but currently, get_best_model_for_task primarily uses task_name.
+                    primary_model, backup_model = model_registry.get_best_model_for_task(
+                        task_name, 
+                        free_only=True # Assuming we prioritize free models for collaboration
+                    )
+                    # Ensure backup_models_list is always a list, even if only one backup model is returned
+                    backup_models_list = [backup_model]
+
+                    system_prompt = role_info.get("system_prompt", f"You are an AI assistant playing the role of {role_info.get('name', role_name)} for the task: {task_name}.")
+
+                    enriched_participants.append({
+                        "role": role_name,
+                        "model": primary_model,
+                        "backup_models": backup_models_list, # Ensure this is a list
+                        "system_prompt": system_prompt
+                    })
+
+                if not enriched_participants:
+                    print(f"Error: Could not prepare any valid participants for task '{task_name}'.")
+                    results[task_name] = f"Error: No valid participants for task {task_name}"
+                    continue
+
                 # Execute collaborative conversation for this task
                 success, result = await self.conversation.start_conversation(
                     topic=task_name,
                     initial_prompt=current_input,
-                    participants=participants
+                    participants=enriched_participants # Pass enriched list
                 )
                 
                 if not success:
@@ -122,9 +167,10 @@ class CollaborativeTaskOrchestrator:
                 
             else:
                 # For standard tasks, use the regular task execution
-                role_name = task_config.get("role", "default")
-                success, result = await self._execute_standard_task(task_name, role_name, current_input)
-                
+                role_name = task_config.get("role", "default") # Get role from task config or use default
+                # Pass the full task_config which might contain model overrides etc.
+                success, result = await self._execute_standard_task(task_name, role_name, current_input, task_config)
+
                 if not success:
                     print(f"Failed to execute standard task: {task_name}")
                     results[task_name] = f"Error: Failed to execute task {task_name}"
@@ -138,9 +184,10 @@ class CollaborativeTaskOrchestrator:
             
             # Validate result if validation is enabled
             if self.validation_enabled:
-                validation_config = self._get_validation_config(task_name)
+                # Validation config might be part of task_config or global
+                validation_config = task_config.get("validation", self.validator.config)
                 is_valid, validation_message = await self.validator.validate(
-                    result, 
+                    result,
                     task_name, 
                     validation_config
                 )
@@ -152,169 +199,115 @@ class CollaborativeTaskOrchestrator:
         
         print(f"\n=== Workflow {workflow_name} completed ===")
         return results
-    
-    def _get_task_participants(self, task_name: str) -> List[Dict[str, Any]]:
-        """Get the participant configurations for a collaborative task.
+
+    # Removed _get_task_participants as it's now handled inline
+
+    async def _execute_standard_task(self, 
+                                   task_name: str, 
+                                   role_name: str, 
+                                   input_data: str, 
+                                   task_config: Dict[str, Any]) -> Tuple[bool, str]:
+        """Execute a standard, non-collaborative task using a single model.
         
         Args:
             task_name: Name of the task
-            
-        Returns:
-            List of participant configurations
-        """
-        # Get task-specific participant configuration
-        task_config = self.config.get("TASKS", {}).get(task_name, {})
-        participants = task_config.get("participants", [])
-        
-        if not participants:
-            # Fall back to default participants based on task type
-            if task_name == "requirements_analysis":
-                participants = [
-                    {"role": "Requirements Analyst", "model": "deepseek/deepseek-chat-v3-0324:free", "backup_models": ["meta-llama/llama-4-maverick:free", "google/gemini-2.5-pro-exp-03-25:free"]},
-                    {"role": "Domain Expert", "model": "deepseek/deepseek-chat-v3-0324:free", "backup_models": ["meta-llama/llama-4-maverick:free", "google/gemini-2.5-pro-exp-03-25:free"]},
-                    {"role": "User Advocate", "model": "deepseek/deepseek-chat-v3-0324:free", "backup_models": ["meta-llama/llama-4-maverick:free", "google/gemini-2.5-pro-exp-03-25:free"]}
-                ]
-            elif task_name == "system_design":
-                participants = [
-                    {"role": "System Architect", "model": "google/gemini-2.5-pro-exp-03-25:free", "backup_models": ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "Security Expert", "model": "google/gemini-2.5-pro-exp-03-25:free", "backup_models": ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "Performance Engineer", "model": "google/gemini-2.5-pro-exp-03-25:free", "backup_models": ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]}
-                ]
-            elif task_name == "implementation_planning":
-                participants = [
-                    {"role": "Technical Lead", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "Developer", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "QA Engineer", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]}
-                ]
-            elif task_name == "code_generation":
-                participants = [
-                    {"role": "Senior Developer", "model": "google/gemini-2.5-pro-exp-03-25:free", "backup_models": ["meta-llama/llama-4-maverick:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "Code Reviewer", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]}
-                ]
-            elif task_name == "code_review":
-                participants = [
-                    {"role": "Code Reviewer", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "Security Auditor", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]},
-                    {"role": "Performance Analyst", "model": "meta-llama/llama-4-maverick:free", "backup_models": ["google/gemini-2.5-pro-exp-03-25:free", "deepseek/deepseek-chat-v3-0324:free"]}
-                ]
-            else:
-                # Default participants for unknown task types
-                participants = [
-                    {"role": "Expert 1", "model": "meta-llama/llama-4-maverick:free"},
-                    {"role": "Expert 2", "model": "google/gemini-2.5-pro-exp-03-25:free"}
-                ]
-        
-        # Enhance each participant with system prompts if not already specified
-        for participant in participants:
-            if "system_prompt" not in participant:
-                role = participant["role"]
-                participant["system_prompt"] = self._get_role_system_prompt(role, task_name)
-        
-        return participants
-    
-    def _get_role_system_prompt(self, role: str, task_name: str) -> str:
-        """Get the system prompt for a specific role and task.
-        
-        Args:
-            role: The role name
-            task_name: The task name
-            
-        Returns:
-            The system prompt for this role and task
-        """
-        # Check if there's a specific prompt for this role and task
-        role_config = self.config.get("ROLES", {}).get(role, {})
-        task_specific_prompt = role_config.get("tasks", {}).get(task_name, "")
-        
-        if task_specific_prompt:
-            return task_specific_prompt
-        
-        # Fall back to generic role prompt
-        generic_prompt = role_config.get("system_prompt", "")
-        if generic_prompt:
-            return generic_prompt
-        
-        # Generate a default prompt based on role and task
-        default_prompts = {
-            "Requirements Analyst": "You are an expert in analyzing and clarifying requirements. Focus on understanding user needs, identifying edge cases, and ensuring requirements are complete and unambiguous.",
-            "Domain Expert": "You have deep knowledge in the problem domain. Provide context, identify domain-specific challenges, and ensure solutions align with domain best practices.",
-            "User Advocate": "You represent the end users. Focus on usability, accessibility, and ensuring the solution meets real user needs.",
-            "System Architect": "You are an expert in designing robust software architectures. Focus on component design, interfaces, and ensuring the architecture meets all functional and non-functional requirements.",
-            "Security Expert": "You specialize in security aspects of software design. Identify potential vulnerabilities and ensure the design incorporates security best practices.",
-            "Performance Engineer": "You focus on system performance. Identify potential bottlenecks and ensure the design can meet performance requirements.",
-            "Technical Lead": "You oversee technical implementation. Focus on technical feasibility, resource allocation, and ensuring the implementation plan is comprehensive.",
-            "Developer": "You are an experienced software developer. Focus on implementation details, coding standards, and technical challenges.",
-            "QA Engineer": "You specialize in quality assurance. Focus on testability, edge cases, and ensuring the implementation plan includes adequate testing.",
-            "Senior Developer": "You are a senior software developer with extensive experience. Write clean, efficient, and well-documented code that follows best practices.",
-            "Code Reviewer": "You are an expert in code review. Focus on code quality, adherence to standards, and identifying potential issues.",
-            "Security Auditor": "You specialize in security code reviews. Identify security vulnerabilities and ensure the code follows security best practices.",
-            "Performance Analyst": "You focus on code performance. Identify performance issues and suggest optimizations."
-        }
-        
-        return default_prompts.get(role, f"You are an expert {role}. Contribute your expertise to the current task: {task_name}.")
-    
-    async def _execute_standard_task(self, 
-                                 task_name: str, 
-                                 role_name: str,
-                                 input_data: str) -> Tuple[bool, str]:
-        """Execute a standard (non-collaborative) task using a single model.
-        
-        Args:
-            task_name: Name of the task to execute
-            role_name: Name of the role to use
+            role_name: Name of the role to perform the task
             input_data: Input data for the task
+            task_config: Configuration specific to this task instance from the workflow
             
         Returns:
             Tuple of (success, result)
         """
-        # Get task configuration using dynamic config manager
-        task_config = self.config_manager.get_task_config(task_name, role_name)
-        if not task_config:
-            return False, f"Task not found in configuration: {task_name}"
-            
-        # Get primary configs
-        primary_config = task_config.get("primary", {})
-        primary_model = primary_config.get("model")
-        
-        # Get context from memory system
-        context = self.memory.get_relevant_context(
-            input_data, 
-            task=task_name,
-            model=primary_model
-        )
-        
-        # Prepare input with context
-        if context:
-            full_input = f"Previous context:\n\n{context}\n\n===\n\nCurrent task:\n\n{input_data}"
-        else:
-            full_input = input_data
-            
-        # Get system prompt
-        system_prompt = primary_config.get("system_prompt", "")
-        
-        # Add validation instructions to system prompt
-        validation_config = task_config.get("validation", {})
-        system_prompt = self._enhance_system_prompt(system_prompt, task_name, validation_config)
-        
-        # Create messages array
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": full_input}
-        ]
-        
-        # Generate completion
         try:
+            # Get managers from the config manager
+            role_manager = self.config_manager.get_role_manager()
+            model_registry = self.config_manager.get_model_registry()
+            
+            role_info = role_manager.get_role(role_name)
+            if not role_info:
+                print(f"Warning: Role '{role_name}' not found for task '{task_name}'. Using defaults.")
+                role_info = {}
+            
+            # Determine models - allow overrides from task_config
+            primary_model_override = task_config.get("primary_model")
+            backup_model_override = task_config.get("backup_model")
+            
+            primary_model, backup_model = model_registry.get_best_model_for_task(
+                task_name,
+                primary_override=primary_model_override,
+                backup_override=backup_model_override
+            )
+            
+            # Get system prompt from role, allow override from task_config
+            system_prompt = task_config.get("system_prompt", role_info.get("system_prompt", f"You are an AI assistant tasked with {task_name}."))
+            
+            # Get model parameters from role or task_config, or use defaults
+            model_prefs = role_info.get("model_preferences", {})
+            temperature = task_config.get("temperature", model_prefs.get("temperature", 0.7))
+            # Max tokens/context window might come from model registry, role, task_config or defaults
+            max_tokens = task_config.get("max_tokens", model_prefs.get("max_tokens", 4000))
+            context_window = task_config.get("context_window", model_prefs.get("context_window", 8000))
+            
+            # Construct a task_config-like dictionary for the adapter
+            adapter_task_config = {
+                "primary": {
+                    "model": primary_model,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "context_window": context_window,
+                    "system_prompt": system_prompt # Pass the potentially overridden prompt
+                },
+                "backup": {
+                    "model": backup_model,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "context_window": context_window,
+                    "system_prompt": system_prompt
+                },
+                # Get validation config from task_config, role, or global config
+                "validation": task_config.get("validation", role_info.get("output_format", {}).get("validation", self.validator.config))
+            }
+            
+            # Get context from memory system
+            context = self.memory.get_relevant_context(
+                input_data, 
+                task=task_name,
+                model=primary_model
+            )
+            
+            # Prepare input with context
+            if context:
+                full_input = f"Previous context:\n\n{context}\n\n===\n\nCurrent task:\n\n{input_data}"
+            else:
+                full_input = input_data
+                
+            # Enhance system prompt if needed (e.g., add validation instructions)
+            enhanced_system_prompt = self._enhance_system_prompt(system_prompt, task_name, adapter_task_config["validation"])
+
+            # Prepare messages
+            messages = [
+                {"role": "system", "content": enhanced_system_prompt},
+                {"role": "user", "content": full_input}
+            ]
+            
+            # Generate completion using the adapter
             response = await self.adapter.generate_completion(
                 messages=messages,
-                task_config=task_config
+                task_config=adapter_task_config # Pass the constructed config
             )
             
             result = response["choices"][0]["message"]["content"]
+            
+            # Add to memory using add_document method
+            metadata = {"task": task_name, "source": "standard_task"}
+            self.memory.add_document(f"Input: {full_input}\n\nOutput: {result}", metadata)
+            
             return True, result
             
         except Exception as e:
-            print(f"Error executing task {task_name}: {str(e)}")
-            return False, f"Error: {str(e)}"
+            print(f"Error executing standard task {task_name} with role {role_name}: {str(e)}")
+            # Optionally, try backup model here if adapter doesn't handle it
+            return False, str(e)
     
     def _enhance_system_prompt(self, system_prompt: str, task_name: str, validation_config: Dict[str, Any]) -> str:
         """Enhance the system prompt with task-specific instructions.
@@ -350,3 +343,23 @@ class CollaborativeTaskOrchestrator:
         """
         task_config = self.config.get("TASKS", {}).get(task_name, {})
         return task_config.get("validation", {})
+
+# Example usage (if run directly)
+async def main():
+    # Assume config.yml and workflows/collaborative_workflow.yml exist
+    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yml')
+    orchestrator = CollaborativeTaskOrchestrator(config_path)
+    await orchestrator.initialize()
+    
+    # Example input
+    initial_requirements = "Create a simple web application for managing tasks."
+    
+    # Execute the collaborative workflow defined in the workflow file
+    # The workflow name 'collaborative' should match the key in config.yml or the filename
+    results = await orchestrator.execute_workflow("collaborative", initial_requirements)
+    
+    print("\n=== Final Workflow Results ===")
+    print(json.dumps(results, indent=2))
+
+if __name__ == "__main__":
+    asyncio.run(main())

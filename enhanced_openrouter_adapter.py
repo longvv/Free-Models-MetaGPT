@@ -203,11 +203,7 @@ class ModelRotator:
         }
         self.current_index = 0
         
-        # Add model size awareness
-        self.model_sizes = {
-            "google/gemini-2.5-pro-exp-03-25:free": "large",
-            "deepseek/deepseek-chat-v3-0324:free": "large"
-        }
+        # Model context sizes are now handled by the config manager or memory system
         
     def get_next_available_model(self) -> Optional[str]:
         """Get the next available model.
@@ -264,14 +260,25 @@ class EnhancedOpenRouterAdapter:
             config: Configuration dictionary
             api_key: OpenRouter API key (optional, can be set via env variable)
         """
-        # Get API key from parameter, environment variable, or config
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or config.get("OPENROUTER_API_KEY")
+        # Load OpenRouter configuration
+        openrouter_config = config.get('OPENROUTER_CONFIG', {})
+        self.default_api_key = api_key or os.getenv("OPENROUTER_API_KEY") or openrouter_config.get('default_api_key')
+        self.model_keys = openrouter_config.get('model_keys', {})
         
-        if not self.api_key:
-            print("WARNING: OpenRouter API key not provided and not found in environment or config.")
-            print("API requests will fail without a valid API key.")
-        else:
-            print(f"Using OpenRouter API key (first 5 chars): {self.api_key[:5]}...")
+        # Enhanced debug to see what model keys are being loaded
+        if self.model_keys:
+            for model_id, key in self.model_keys.items():
+                key_prefix = key[:5] if key else "None"
+                print(f"Model key for {model_id}: {key_prefix}...")
+
+        # Ensure at least one key source is available
+        if not self.default_api_key and not self.model_keys:
+            print("WARNING: No OpenRouter API keys found in config, environment, or parameters.")
+            print("API requests will likely fail without valid API keys.")
+        elif self.default_api_key:
+            print(f"Using default OpenRouter API key (first 5 chars): {self.default_api_key[:5]}...")
+        if self.model_keys:
+            print(f"Loaded {len(self.model_keys)} model-specific API keys.")
         
         rate_limit_config = config.get("RATE_LIMITING", {})
         self.rate_limiter = RateLimiter(
@@ -330,25 +337,49 @@ class EnhancedOpenRouterAdapter:
         
         # Generate request key for rate limiter
         request_key = f"{model}:{endpoint}"
-        
-        # Verify API key is available
-        if not self.api_key:
-            raise Exception("OpenRouter API key is not set. Please set OPENROUTER_API_KEY in your config or environment.")
-        
-        # Set up headers with the global API key
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://metagpt.com",  # Replace with your domain
-            "X-Title": "MetaGPT Free Models"        # Your application name
-        }
-        
+
         retries = 0
         while retries <= max_retries:
             # Get next available model
             current_model = rotator.get_next_available_model()
             if not current_model:
                 raise Exception(f"All models are currently unavailable. Try again later.")
+
+            # Enhanced API key selection with debugging
+            current_api_key = None
+            
+            # Try exact match first
+            if current_model in self.model_keys:
+                current_api_key = self.model_keys[current_model]
+                print(f"Found exact API key match for {current_model}")
+            else:
+                # Try without the :free suffix as a fallback
+                base_model = current_model.split(':')[0]
+                if base_model in self.model_keys:
+                    current_api_key = self.model_keys[base_model]
+                    print(f"Found API key match for base model {base_model}")
+                else:
+                    # Use default key as last resort
+                    current_api_key = self.default_api_key
+                    if current_api_key:
+                        print(f"Using default API key for {current_model}")
+
+            if not current_api_key:
+                error_msg = f"No API key found for model '{current_model}' and no default key is set."
+                print(error_msg)  # Print in addition to logging for better visibility
+                log_error(error_msg, error_msg, None)
+                rotator.record_failure(current_model)
+                retries += 1
+                await asyncio.sleep(1) # Small delay before trying next model/retry
+                continue # Try next model or retry
+
+            # Set up headers with the selected API key
+            headers = {
+                "Authorization": f"Bearer {current_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://metagpt.com",  # Replace with your domain
+                "X-Title": "MetaGPT Free Models"        # Your application name
+            }
                 
             # Update payload with current model
             model_payload = dict(payload)
@@ -499,9 +530,9 @@ class EnhancedOpenRouterAdapter:
         log_model_request(primary_model, messages, task_config)
         log_processing_step("generate_completion", f"Using model: {primary_model}, backup: {backup_model if backup_model else 'None'}")
         
-        # Special handling for large context window models
-        if primary_model == "deepseek/deepseek-chat-v3-0324:free":
-            timeout = max(timeout, 300)  # Longer timeout for large context window
+        # Special handling for specific models can be configured if needed
+        # Example: if primary_model in self.config.get("special_handling_models", []):
+        #     pass
             
         # Special handling for large parameter models
         if "70b" in primary_model or "32b" in primary_model or "22b" in primary_model:

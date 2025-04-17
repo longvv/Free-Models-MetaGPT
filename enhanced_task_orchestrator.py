@@ -12,6 +12,8 @@ import jsonschema
 from enhanced_openrouter_adapter import EnhancedOpenRouterAdapter
 from enhanced_memory import EnhancedMemorySystem
 from validators import ValidationSystem
+# Import DynamicConfigManager
+from config_manager import DynamicConfigManager
 
 class EnhancedTaskOrchestrator:
     """Enhanced orchestrator for tasks across multiple free models in MetaGPT."""
@@ -23,54 +25,105 @@ class EnhancedTaskOrchestrator:
             config_path: Path to configuration file
         """
         self.config_path = config_path
-        self.config = self._load_config()
+        # Initialize the dynamic configuration manager
+        self.config_manager = DynamicConfigManager(config_path)
+        # Config is loaded within config_manager now, access sections via methods
+        # self.config = self._load_config() # Deprecated
         
         # Initialize OpenRouter adapter
-        self.adapter = EnhancedOpenRouterAdapter(self.config)
+        # Pass the config manager or specific sections if needed
+        openrouter_cfg = self.config_manager.get_config_section("OPENROUTER_CONFIG") or {}
+        # Assuming EnhancedOpenRouterAdapter needs the registry too
+        self.adapter = EnhancedOpenRouterAdapter(openrouter_cfg, self.config_manager.get_model_registry())
         
         # Initialize memory system
-        memory_config = self.config.get("MEMORY_SYSTEM", {})
+        memory_config = self.config_manager.get_config_section("MEMORY_SYSTEM") or {}
         self.memory = EnhancedMemorySystem(memory_config)
         
         # Initialize validation system
-        validator_config = self.config.get("VALIDATORS", {})
+        validator_config = self.config_manager.get_config_section("VALIDATORS") or {}
         self.validator = ValidationSystem(validator_config)
         
         # Task queue
         self.task_queue = asyncio.Queue()
         
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file.
-        
-        Returns:
-            Configuration dictionary
-        """
-        if not os.path.exists(self.config_path):
-            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+    # _load_config is no longer needed as DynamicConfigManager handles it
+    # def _load_config(self) -> Dict[str, Any]:
+    #     """Load configuration from YAML file.
+    #     
+    #     Returns:
+    #         Configuration dictionary
+    #     """
+    #     if not os.path.exists(self.config_path):
+    #         raise FileNotFoundError(f"Config file not found: {self.config_path}")
+    #         
+    #     with open(self.config_path, 'r') as f:
+    #         return yaml.safe_load(f)
             
-        with open(self.config_path, 'r') as f:
-            return yaml.safe_load(f)
-            
+    async def initialize(self) -> None:
+        """Initialize the orchestrator by loading config through the manager."""
+        await self.config_manager.initialize()
+
     async def _execute_task(self, 
                           task_name: str, 
+                          role_name: str, # Added role_name for consistency
                           input_data: str) -> Tuple[bool, str]:
         """Execute a single task using the appropriate model.
         
         Args:
             task_name: Name of the task to execute
+            role_name: Name of the role to use
             input_data: Input data for the task
             
         Returns:
             Tuple of (success, result)
         """
-        task_config = self.config.get("TASK_MODEL_MAPPING", {}).get(task_name)
-        if not task_config:
-            return False, f"Task not found in configuration: {task_name}"
-            
-        # Get primary configs
-        primary_config = task_config.get("primary", {})
-        primary_model = primary_config.get("model")
+        # Get task configuration using dynamic config manager
+        # Note: Original enhanced_task_orchestrator didn't use get_task_config
+        # We adapt it to use role and model info from the manager
+        role_manager = self.config_manager.get_role_manager()
+        model_registry = self.config_manager.get_model_registry()
         
+        role_info = role_manager.get_role(role_name)
+        if not role_info:
+            print(f"Warning: Role '{role_name}' not found for task '{task_name}'. Using defaults.")
+            role_info = {}
+
+        # Determine models
+        primary_model, backup_model = model_registry.get_best_model_for_task(task_name)
+        
+        # Get system prompt from role
+        system_prompt = role_info.get("system_prompt", f"You are an AI assistant tasked with {task_name}.")
+        
+        # Get model parameters from role or use defaults
+        model_prefs = role_info.get("model_preferences", {})
+        temperature = model_prefs.get("temperature", 0.7)
+        # Max tokens/context window might come from model registry or defaults
+        # For simplicity, using fixed values here, but could be dynamic
+        max_tokens = 4000 
+        context_window = 8000
+
+        # Construct a task_config-like dictionary for the adapter
+        # This mimics the structure expected by adapter.generate_completion
+        task_config_for_adapter = {
+            "primary": {
+                "model": primary_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "context_window": context_window,
+                "system_prompt": system_prompt # Pass the base prompt here
+            },
+            "backup": {
+                "model": backup_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "context_window": context_window,
+                "system_prompt": system_prompt
+            },
+            # Get validation config from role or global config
+            "validation": role_info.get("output_format", {}).get("validation", self.validator.config)
+        }
+
         # Get context from memory system - pass model name for context optimization
         context = self.memory.get_relevant_context(
             input_data, 
@@ -80,24 +133,22 @@ class EnhancedTaskOrchestrator:
         
         # Prepare input with context
         if context:
-            full_input = f"Previous context:\n\n{context}\n\n===\n\nCurrent task:\n\n{input_data}"
+            full_input = f"Previous context:\\n\\n{context}\\n\\n===\\n\\nCurrent task:\\n\\n{input_data}"
         else:
             full_input = input_data
             
-        system_prompt = primary_config.get("system_prompt", "")
+        # System prompt is already part of task_config_for_adapter
+        # system_prompt = primary_config.get("system_prompt", "") # Redundant
         
-        # Enhanced prompting for specific model types
+        # Enhanced prompting for specific model types (can be kept or moved to config)
         if "deepseek" in primary_model:
-            # Enhance system prompt for DeepSeek model
-            system_prompt = f"{system_prompt}\n\nPlease be thorough and detailed in your analysis."
+            system_prompt = f"{system_prompt}\\n\\nPlease be thorough and detailed in your analysis."
         elif "olympiccoder" in primary_model:
-            # Enhance system prompt for code-specific model
-            system_prompt = f"{system_prompt}\n\nFocus on writing clean, efficient, and well-documented code."
+            system_prompt = f"{system_prompt}\\n\\nFocus on writing clean, efficient, and well-documented code."
         elif "phi-3" in primary_model:
-            # Enhance system prompt for Phi-3 with large context window
-            system_prompt = f"{system_prompt}\n\nUtilize your large context window to maintain coherence across the entire task."
+            system_prompt = f"{system_prompt}\\n\\nUtilize your large context window to maintain coherence across the entire task."
             
-        # Create messages array
+        # Create messages array using the potentially enhanced system_prompt
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": full_input}
@@ -107,13 +158,13 @@ class EnhancedTaskOrchestrator:
         try:
             response = await self.adapter.generate_completion(
                 messages=messages,
-                task_config=task_config
+                task_config=task_config_for_adapter # Pass the constructed config
             )
             
             result = response["choices"][0]["message"]["content"]
             
             # Validate result
-            validation_config = task_config.get("validation", {})
+            validation_config = task_config_for_adapter.get("validation", {})
             is_valid, validation_message = await self.validator.validate(
                 result, 
                 task_name, 

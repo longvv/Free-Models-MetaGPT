@@ -36,7 +36,7 @@ async def list_models(config_path: str):
         logger.logger.info(f"Using API key (first 5 chars): {api_key[:5]}...")
     else:
         print("No API key found in configuration.")
-        logger.log_error("Configuration", "No API key found in configuration")
+        logger.log_error("Configuration", "No API key found in configuration", None)
         return []
     
     print("Fetching available models from OpenRouter...")
@@ -384,7 +384,7 @@ def main():
         if not asyncio.run(check_workflow_exists(args.config, args.workflow)):
             error_msg = f"Workflow '{args.workflow}' not found"
             print(f"Error: {error_msg}")
-            logger.log_error("Workflow", error_msg)
+            logger.log_error("Workflow", error_msg, None)
             print("Available workflows:")
             workflows = asyncio.run(list_workflows(args.config))
             for workflow in workflows:

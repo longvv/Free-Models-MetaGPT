@@ -14,7 +14,8 @@ import re
 from enhanced_openrouter_adapter import EnhancedOpenRouterAdapter
 from enhanced_memory import EnhancedMemorySystem
 from validators import ValidationSystem
-from config_manager import DynamicConfigManager
+# Import DynamicConfigManager from the correct location (assuming it's in the parent dir)
+from ..config_manager import DynamicConfigManager
 
 class DynamicTaskOrchestrator:
     """Enhanced orchestrator with dynamic configuration for tasks across multiple models."""
@@ -87,34 +88,66 @@ class DynamicTaskOrchestrator:
         Returns:
             Tuple of (success, result)
         """
-        # Get task configuration using dynamic config manager
-        task_config = self.config_manager.get_task_config(task_name, role_name)
-        if not task_config:
-            return False, f"Task not found in configuration: {task_name}"
-            
-        # Get primary configs
-        primary_config = task_config.get("primary", {})
-        primary_model = primary_config.get("model")
+        # Get managers from the config manager
+        role_manager = self.config_manager.get_role_manager()
+        model_registry = self.config_manager.get_model_registry()
         
+        role_info = role_manager.get_role(role_name)
+        if not role_info:
+            print(f"Warning: Role '{role_name}' not found for task '{task_name}'. Using defaults.")
+            role_info = {}
+        
+        # Determine models
+        primary_model, backup_model = model_registry.get_best_model_for_task(task_name)
+        
+        # Get system prompt from role
+        system_prompt = role_info.get("system_prompt", f"You are an AI assistant tasked with {task_name}.")
+        
+        # Get model parameters from role or use defaults
+        model_prefs = role_info.get("model_preferences", {})
+        temperature = model_prefs.get("temperature", 0.7)
+        # Max tokens/context window might come from model registry or defaults
+        # For simplicity, using fixed values here, but could be dynamic
+        max_tokens = 4000 
+        context_window = 8000
+        
+        # Construct a task_config-like dictionary for the adapter
+        task_config_for_adapter = {
+            "primary": {
+                "model": primary_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "context_window": context_window,
+                "system_prompt": system_prompt # Pass the base prompt here
+            },
+            "backup": {
+                "model": backup_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "context_window": context_window,
+                "system_prompt": system_prompt
+            },
+            # Get validation config from role or global config
+            "validation": role_info.get("output_format", {}).get("validation", self.validator.config)
+        }
+          
         # Get context from memory system - pass model name for context optimization
         context = self.memory.get_relevant_context(
             input_data, 
             task=task_name,
             model=primary_model
         )
-        
+          
         # Prepare input with context
         if context:
             full_input = f"Previous context:\n\n{context}\n\n===\n\nCurrent task:\n\n{input_data}"
         else:
             full_input = input_data
-            
-        # Enhance system prompts based on task
-        system_prompt = primary_config.get("system_prompt", "")
-        
+              
+        # Enhance system prompts based on task (using the base prompt from role_info)
         # Add validation instructions to system prompt
-        validation_config = task_config.get("validation", {})
-        
+        validation_config = task_config_for_adapter.get("validation", {})
+          
         if task_name == "requirements_analysis":
             format_instructions = "\n\nIMPORTANT: Your response MUST include ALL of these section headers:\n"
             for section in validation_config.get("required_sections", []):
@@ -143,21 +176,21 @@ class DynamicTaskOrchestrator:
                 format_instructions += f"- {section}\n"
             system_prompt = system_prompt + format_instructions
         
-        # Create messages array
+        # Create messages array using the potentially enhanced system_prompt
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": full_input}
         ]
-        
+          
         # Generate completion
         try:
             response = await self.adapter.generate_completion(
                 messages=messages,
-                task_config=task_config
+                task_config=task_config_for_adapter # Pass the constructed config
             )
-            
+              
             result = response["choices"][0]["message"]["content"]
-            
+             
             # Apply post-processing to the result if needed
             result = self._post_process_result(result, task_name, validation_config)
             
@@ -187,7 +220,7 @@ class DynamicTaskOrchestrator:
                             print(f"Retry {retry+1}/{max_retries} for {task_name} due to validation failure")
                             response = await self.adapter.generate_completion(
                                 messages=messages,
-                                task_config=task_config
+                                task_config=task_config_for_adapter # Use the constructed config
                             )
                             
                             result = response["choices"][0]["message"]["content"]
@@ -208,17 +241,47 @@ class DynamicTaskOrchestrator:
                                 
                         if not is_valid:
                             print(f"Validation failed after {max_retries} retries: {validation_message}")
-                            # Try to fix the result if possible
-                            result = self._fix_result(result, task_name, validation_config)
-            else:
-                print(f"Validation skipped for task: {task_name}")
-                
+                            # Optionally, decide how to handle persistent failure
+                            # For now, proceed with the last result but maybe log error
+            
+            # Add result to memory
+            self.memory.add_interaction(task_name, full_input, result)
+            
             return True, result
             
         except Exception as e:
-            print(f"Error executing task {task_name}: {str(e)}")
+            print(f"Error executing task {task_name} with role {role_name}: {str(e)}")
+            # Optionally, try backup model here if adapter doesn't handle it
             return False, str(e)
-            
+
+    def _post_process_result(self, result: str, task_name: str, validation_config: Dict[str, Any]) -> str:
+        """Apply task-specific post-processing to the model's result."""
+        # Example: Ensure code blocks are correctly formatted for code_generation
+        if task_name == "code_generation":
+            # Simple check to ensure markdown code blocks exist if expected
+            if "```" not in result and validation_config.get("required_patterns") and any(p in validation_config["required_patterns"] for p in ["def", "class"]):
+                 print(f"Warning: Code generation task '{task_name}' result might be missing markdown code blocks.")
+                 # Attempt to wrap if it looks like code but lacks blocks
+                 lines = result.strip().split('\n')
+                 if len(lines) > 1 and (lines[0].startswith("import") or lines[0].startswith("def") or lines[0].startswith("class")):
+                     language = validation_config.get("language", "python") # Get language from config or default
+                     result = f"```{language}\n{result.strip()}\n```"
+                     print("Attempted to wrap result in markdown code block.")
+        
+        # Example: Ensure required sections exist for documentation tasks
+        required_sections = validation_config.get("required_sections", [])
+        if required_sections:
+            missing_sections = []
+            for section in required_sections:
+                # Use regex to find section headers (case-insensitive, allows for minor variations)
+                if not re.search(rf"^#+\s*{re.escape(section)}\s*$\n", result, re.MULTILINE | re.IGNORECASE):
+                    missing_sections.append(section)
+            if missing_sections:
+                print(f"Warning: Task '{task_name}' result might be missing sections: {', '.join(missing_sections)}")
+                # Optionally, attempt to add missing section headers if content seems present but lacks header
+
+        return result
+
     async def _process_task_queue(self, workspace_path: Path, initial_results: Dict[str, str]) -> Dict[str, str]:
         """Process tasks from the queue.
         
@@ -229,421 +292,123 @@ class DynamicTaskOrchestrator:
         Returns:
             Dictionary of results
         """
-        # Initialize with the provided initial results
         results = dict(initial_results)
         
-        print("Initial input:", results.keys())
-        
         while not self.task_queue.empty():
-            # Get next task
             task_info = await self.task_queue.get()
             task_name = task_info["task"]
-            role_name = task_info.get("role", task_name)  # Use task name as role if not specified
             input_key = task_info["input"]
             output_key = task_info["output"]
+            role_name = task_info.get("role", task_name) # Use task name as role if not specified
             
-            print(f"Processing task: {task_name} with role: {role_name}")
+            print(f"Processing task: {task_name} (Role: {role_name})")
             print(f"  Input key: {input_key}")
             print(f"  Available keys: {list(results.keys())}")
             
-            # Get input from results
             if input_key not in results:
-                print(f"Error: Input {input_key} not found in results")
+                print(f"Error: Input '{input_key}' not found in results for task '{task_name}'")
                 self.task_queue.task_done()
                 continue
                 
             input_data = results[input_key]
             
             # Execute task
-            success, output = await self._execute_task(task_name, role_name, input_data)
+            success, result = await self._execute_task(task_name, role_name, input_data)
             
-            if not success:
-                print(f"Error executing task {task_name}: {output}")
-                self.task_queue.task_done()
-                continue
-                
-            # Store result
-            results[output_key] = output
-            
-            # Add to memory
-            self.memory.add_document(
-                document=output,
-                metadata={
-                    "task": task_name,
-                    "role": role_name,
-                    "source": output_key,
-                    "timestamp": os.path.getmtime(workspace_path)
-                }
-            )
-            
-            # Save output to file
-            output_file = workspace_path / f"{output_key}.txt"
-            with open(output_file, 'w') as f:
-                f.write(output)
-                
-            print(f"Completed task: {task_name}")
+            if success:
+                results[output_key] = result
+                # Save intermediate result to workspace
+                output_path = workspace_path / f"{output_key}.txt"
+                try:
+                    with open(output_path, 'w') as f:
+                        f.write(result)
+                    print(f"Saved result for {task_name} to {output_path}")
+                except Exception as e:
+                    print(f"Error saving result for {task_name}: {str(e)}")
+            else:
+                print(f"Task {task_name} failed. Stopping workflow.")
+                # Optionally handle failure, e.g., add error message to results
+                results[output_key] = f"Error executing task {task_name}: {result}"
+                # Clear the queue to stop processing further tasks on failure
+                while not self.task_queue.empty():
+                    await self.task_queue.get()
+                    self.task_queue.task_done()
+                break # Exit the processing loop
+
             self.task_queue.task_done()
             
         return results
-    
-    async def run_workflow(self, 
-                      input_idea: str,
-                      workflow_name: str = "standard", 
-                      workspace_dir: str = "./workspace") -> Dict[str, str]:
-        """Run the workflow with dynamic configuration.
+
+    async def execute_workflow(self, 
+                             workflow_name: str = "standard", 
+                             input_data: str = None, 
+                             workspace_dir: str = "./workspace") -> Dict[str, Any]:
+        """Execute a complete workflow.
         
         Args:
-            input_idea: Initial idea/requirements from user
-            workflow_name: Name of the workflow to use
-            workspace_dir: Directory to save outputs
+            workflow_name: Name of the workflow to execute
+            input_data: Initial input data for the workflow
+            workspace_dir: Directory to save intermediate and final results
             
         Returns:
-            Dictionary of workflow outputs
+            Dictionary containing results of each task in the workflow
         """
-        # Create workspace directory if it doesn't exist
+        # Ensure orchestrator is initialized
+        if not self.config_manager.loaded:
+            await self.initialize()
+            
+        # Get workflow stages using dynamic config manager
+        workflow_stages = self.config_manager.get_workflow_stages(workflow_name)
+        if not workflow_stages:
+             # Try loading standard/default if specific one not found
+            print(f"Warning: Workflow '{workflow_name}' not found. Trying 'standard' workflow.")
+            workflow_stages = self.config_manager.get_workflow_stages("standard")
+            if not workflow_stages:
+                 raise ValueError(f"No workflow configuration could be found for '{workflow_name}' or 'standard'.")
+
+        print(f"Executing workflow: {workflow_name}")
+        
+        # Create workspace directory
         workspace_path = Path(workspace_dir)
         workspace_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize results
-        results = {"user_idea": input_idea}
-        
-        # Save the input idea to a file
-        input_file = workspace_path / "user_idea.txt"
-        with open(input_file, 'w') as f:
-            f.write(input_idea)
-        
-        # Add initial idea to memory
-        self.memory.add_document(
-            document=input_idea,
-            metadata={
-                "task": "user_input",
-                "source": "user_idea",
-                "timestamp": os.path.getmtime(workspace_path)
-            }
-        )
-        
-        # Get workflow stages from dynamic configuration
-        workflow_stages = self.config_manager.get_workflow_stages(workflow_name)
-        
-        # Queue tasks from workflow
+        # Add tasks to queue
         for stage in workflow_stages:
-            await self.task_queue.put({
-                "task": stage.get("task"),
-                "role": stage.get("role", stage.get("task")),  # Use task as role if not specified
-                "input": stage.get("input"),
-                "output": stage.get("output")
-            })
+            await self.task_queue.put(stage)
             
-        # Process tasks with initial results
-        results = await self._process_task_queue(workspace_path, results)
+        # Prepare initial results
+        initial_input_key = workflow_stages[0]["input"]
+        initial_results = {initial_input_key: input_data}
         
-        # Create summary file
-        summary_file = workspace_path / "project_summary.md"
-        with open(summary_file, 'w') as f:
-            f.write("# Project Summary\n\n")
-            f.write(f"## Original Idea\n\n{input_idea}\n\n")
-            
-            for stage in workflow_stages:
-                output_key = stage.get("output")
-                if output_key in results:
-                    title = output_key.replace("_", " ").title()
-                    f.write(f"## {title}\n\n{results[output_key]}\n\n")
-                    
-        return results
+        # Process task queue
+        final_results = await self._process_task_queue(workspace_path, initial_results)
+        
+        print(f"Workflow {workflow_name} completed.")
+        return final_results
+
+    def enable_validation(self, enable: bool = True):
+        """Enable or disable result validation."""
+        self.validation_enabled = enable
+        print(f"Result validation {'enabled' if enable else 'disabled'}.")
+
+# Example usage (if run directly)
+async def main():
+    # Use the dynamic orchestrator
+    orchestrator = DynamicTaskOrchestrator("config.yml")
+    await orchestrator.initialize()
     
-    def _fix_result(self, result: str, task_name: str, validation_config: Dict[str, Any]) -> str:
-        """Try to fix result that failed validation.
-        
-        Args:
-            result: Model output that failed validation
-            task_name: Name of the task
-            validation_config: Validation configuration for the task
-            
-        Returns:
-            Fixed result if possible
-        """
-        print(f"Attempting to fix validation failure for {task_name}")
-        
-        # Add missing sections as a last resort
-        required_sections = validation_config.get("required_sections", [])
-        if required_sections:
-            # First check what sections are present
-            present_sections = []
-            for section in required_sections:
-                pattern = re.compile(f"(?:^|\n)#+\\s*{re.escape(section)}|{re.escape(section)}:", re.IGNORECASE)
-                if pattern.search(result):
-                    present_sections.append(section)
-                    
-            missing_sections = [s for s in required_sections if s not in present_sections]
-            
-            # Add missing sections with placeholder text
-            if missing_sections:
-                result += "\n\n" + "=" * 40 + "\n\n"
-                result += "# AUTOMATICALLY ADDED SECTIONS\n\n"
-                
-                for section in missing_sections:
-                    result += f"## {section}\n\n"
-                    result += "This section was automatically added to satisfy validation requirements.\n\n"
-                
-                print(f"Fixed by adding {len(missing_sections)} missing sections")
-        
-        # Add missing patterns if needed
-        required_patterns = validation_config.get("required_patterns", [])
-        if required_patterns and task_name == "code_generation":
-            # Check which patterns are missing
-            missing_patterns = []
-            for pattern in required_patterns:
-                if pattern not in result:
-                    missing_patterns.append(pattern)
-                    
-            # Add some placeholder code with missing patterns
-            if missing_patterns:
-                result += "\n\n" + "=" * 40 + "\n\n"
-                result += "# AUTOMATICALLY ADDED CODE\n\n"
-                result += "```python\n"
-                
-                if "import" in missing_patterns:
-                    result += "import os\nimport sys\n"
-                    
-                if "class" in missing_patterns:
-                    result += "\nclass PlaceholderClass:\n    def __init__(self):\n        self.value = 0\n"
-                    
-                if "def" in missing_patterns:
-                    result += "\ndef placeholder_function():\n    return True\n"
-                    
-                result += "```\n"
-                
-                print(f"Fixed by adding {len(missing_patterns)} missing code patterns")
-        
-        return result
+    # Example: Execute the standard workflow
+    user_idea = "Create a simple Python web server using Flask that returns 'Hello, World!' on the root path."
+    results = await orchestrator.execute_workflow(
+        workflow_name="standard", 
+        input_data=user_idea,
+        workspace_dir="./dynamic_workspace"
+    )
     
-    def _post_process_result(self, result: str, task_name: str, validation_config: Dict[str, Any]) -> str:
-        """Post-process model output to improve validation success.
-        
-        Args:
-            result: Raw model output
-            task_name: Name of the task
-            validation_config: Validation configuration for the task
-            
-        Returns:
-            Processed result
-        """
-        # Add missing sections if needed
-        required_sections = validation_config.get("required_sections", [])
-        if required_sections and task_name != "code_generation":
-            missing_sections = []
-            for section in required_sections:
-                # Check if section exists in any form
-                pattern = re.compile(f"(?:^|\n)#+\\s*{re.escape(section)}|{re.escape(section)}:", re.IGNORECASE)
-                if not pattern.search(result):
-                    missing_sections.append(section)
-                    
-            if missing_sections and len(missing_sections) <= len(required_sections) * 0.25:  # Only fix if just a few sections missing
-                print(f"Post-processing: Adding {len(missing_sections)} missing sections")
-                # Add missing sections at the end
-                for section in missing_sections:
-                    result += f"\n\n## {section}\n\nThis section was added during post-processing."
-        
-        # Special handling for code generation
-        if task_name == "code_generation":
-            required_patterns = validation_config.get("required_patterns", [])
-            
-            # Make sure there are code blocks
-            if "```" not in result:
-                # Extract what looks like code and wrap in code blocks
-                code_lines = []
-                in_code_block = False
-                
-                for line in result.split("\n"):
-                    if any(pattern in line for pattern in ["def ", "class ", "import ", "function"]):
-                        if not in_code_block:
-                            code_lines.append("\n```python")
-                            in_code_block = True
-                        code_lines.append(line)
-                    elif in_code_block and line.strip() == "":
-                        code_lines.append("```\n")
-                        in_code_block = False
-                        code_lines.append(line)
-                    else:
-                        code_lines.append(line)
-                        
-                if in_code_block:
-                    code_lines.append("```")
-                    
-                result = "\n".join(code_lines)
-                print("Post-processing: Added code block formatting")
-                
-            # Check for required patterns in code blocks
-            missing_patterns = []
-            for pattern in required_patterns:
-                if pattern not in result:
-                    missing_patterns.append(pattern)
-                    
-            # Only add missing patterns if just a few are missing
-            if missing_patterns and len(missing_patterns) <= 1:
-                print(f"Post-processing: Adding missing patterns: {missing_patterns}")
-                # Find a code block to add to
-                code_blocks = re.findall(r"```.*?```", result, re.DOTALL)
-                if code_blocks:
-                    last_block = code_blocks[-1]
-                    fixed_block = last_block.rstrip("```")
-                    
-                    # Add missing patterns
-                    for pattern in missing_patterns:
-                        if pattern == "import":
-                            fixed_block += "\nimport os\n"
-                        elif pattern == "def":
-                            fixed_block += "\ndef process_data():\n    return True\n"
-                        elif pattern == "class":
-                            fixed_block += "\nclass DataProcessor:\n    def __init__(self):\n        pass\n"
-                            
-                    fixed_block += "```"
-                    result = result.replace(last_block, fixed_block)
-        
-        return result
-    
-    async def run_parallel_workflow(self,
-                                   input_idea: str,
-                                   workflow_name: str = "standard",
-                                   workspace_dir: str = "./workspace") -> Dict[str, str]:
-        """Run workflow with parallel task execution when possible.
-        
-        Args:
-            input_idea: Initial idea/requirements from user
-            workflow_name: Name of the workflow to use
-            workspace_dir: Directory to save outputs
-            
-        Returns:
-            Dictionary of workflow outputs
-        """
-        # Create workspace directory if it doesn't exist
-        workspace_path = Path(workspace_dir)
-        workspace_path.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize results and dependency graph
-        results = {"user_idea": input_idea}
-        task_dependencies = {}
-        tasks_ready = set()
-        tasks_completed = set()
-        task_configs = {}
-        
-        # Add initial idea to memory
-        self.memory.add_document(
-            document=input_idea,
-            metadata={
-                "task": "user_input",
-                "source": "user_idea",
-                "timestamp": os.path.getmtime(workspace_path)
-            }
-        )
-        
-        # Get workflow stages from dynamic configuration
-        workflow_stages = self.config_manager.get_workflow_stages(workflow_name)
-        
-        # Build dependency graph
-        for stage in workflow_stages:
-            task_name = f"{stage.get('task')}:{stage.get('output')}"
-            input_key = stage.get("input")
-            
-            task_configs[task_name] = {
-                "task": stage.get("task"),
-                "role": stage.get("role", stage.get("task")),  # Use task as role if not specified
-                "input": input_key,
-                "output": stage.get("output")
-            }
-            
-            # Track dependencies
-            if input_key == "user_idea":
-                # No dependencies, ready immediately
-                tasks_ready.add(task_name)
-            else:
-                # Find which task produces this input
-                for other_stage in workflow_stages:
-                    if other_stage.get("output") == input_key:
-                        other_task = f"{other_stage.get('task')}:{other_stage.get('output')}"
-                        if task_name not in task_dependencies:
-                            task_dependencies[task_name] = set()
-                        task_dependencies[task_name].add(other_task)
-                
-        # Process tasks until all are completed
-        while tasks_ready or any(task not in tasks_completed for task in task_dependencies):
-            # Get all ready tasks
-            current_tasks = list(tasks_ready)
-            tasks_ready.clear()
-            
-            if not current_tasks:
-                # No tasks ready, check for deadlock
-                waiting_tasks = set(task_dependencies.keys()) - tasks_completed
-                if waiting_tasks:
-                    print(f"Warning: Workflow deadlock detected. Waiting tasks: {waiting_tasks}")
-                    break
-                else:
-                    # All done
-                    break
-                    
-            # Run all ready tasks in parallel
-            pending_tasks = []
-            pending_task_names = []
-            for task_name in current_tasks:
-                config = task_configs[task_name]
-                task_coroutine = self._execute_task(
-                    config["task"], 
-                    config["role"], 
-                    results[config["input"]]
-                )
-                pending_tasks.append(task_coroutine)
-                pending_task_names.append(task_name)
-                
-            if pending_tasks:
-                task_results = await asyncio.gather(*pending_tasks)
-                
-                # Process results
-                for i, (success, output) in enumerate(task_results):
-                    task_name = pending_task_names[i]
-                    config = task_configs[task_name]
-                    
-                    if not success:
-                        print(f"Error executing task {config['task']}: {output}")
-                    else:
-                        # Store result
-                        results[config["output"]] = output
-                        
-                        # Add to memory
-                        self.memory.add_document(
-                            document=output,
-                            metadata={
-                                "task": config["task"],
-                                "role": config["role"],
-                                "source": config["output"],
-                                "timestamp": os.path.getmtime(workspace_path)
-                            }
-                        )
-                        
-                        # Save output to file
-                        output_file = workspace_path / f"{config['output']}.txt"
-                        with open(output_file, 'w') as f:
-                            f.write(output)
-                            
-                        print(f"Completed task: {config['task']} with role: {config['role']}")
-                        
-                    # Mark task as completed
-                    tasks_completed.add(task_name)
-                    
-                    # Check if any waiting tasks are now ready
-                    for waiting_task, dependencies in task_dependencies.items():
-                        if waiting_task not in tasks_completed and dependencies.issubset(tasks_completed):
-                            tasks_ready.add(waiting_task)
-                            
-        # Create summary file
-        summary_file = workspace_path / "project_summary.md"
-        with open(summary_file, 'w') as f:
-            f.write("# Project Summary\n\n")
-            f.write(f"## Original Idea\n\n{input_idea}\n\n")
-            
-            for stage in workflow_stages:
-                output_key = stage.get("output")
-                if output_key in results:
-                    title = output_key.replace("_", " ").title()
-                    f.write(f"## {title}\n\n{results[output_key]}\n\n")
-                    
-        return results
+    # Print final result (e.g., code review comments)
+    final_output_key = orchestrator.config_manager.get_workflow_stages("standard")[-1]["output"]
+    print("\n=== Final Workflow Output ===")
+    print(results.get(final_output_key, "Workflow did not complete successfully."))
+
+if __name__ == "__main__":
+    asyncio.run(main())

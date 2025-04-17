@@ -356,7 +356,7 @@ class RepoReviewer:
         if code_review_task_config:
             review_task_config = {
                 "primary": code_review_task_config.get("primary", {
-                    "model": "google/gemini-2.5-pro-exp-03-25:free",  # Default if not in config
+                    # Model will be determined by the adapter based on config
                     "temperature": 0.1,
                     "max_tokens": 1000000
                 }),
@@ -366,7 +366,7 @@ class RepoReviewer:
             # Fallback if no code review config found
             review_task_config = {
                 "primary": {
-                    "model": "deepseek/deepseek-chat-v3-0324:free",  # Default to a common free model
+                    # Model will be determined by the adapter based on config
                     "temperature": 0.1,
                     "max_tokens": 128000
                 },

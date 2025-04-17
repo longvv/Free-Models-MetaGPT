@@ -200,11 +200,7 @@ class ModelRotator:
         }
         self.current_index = 0
         
-        # Add model size awareness
-        self.model_sizes = {
-            "google/gemini-2.5-pro-exp-03-25:free": "large",
-            "deepseek/deepseek-chat-v3-0324:free": "large"
-        }
+        # Model context sizes are now handled by the config manager or memory system
         
     def get_next_available_model(self) -> Optional[str]:
         """Get the next available model.
@@ -462,9 +458,9 @@ class EnhancedOpenRouterAdapter:
         temperature = primary_config.get("temperature", 0.7)
         max_tokens = primary_config.get("max_tokens", 2048)
         
-        # Special handling for large context window models
-        if primary_model == "deepseek/deepseek-chat-v3-0324:free":
-            timeout = max(timeout, 300)  # Longer timeout for large context window
+        # Special handling for specific models can be configured if needed
+        # Example: if primary_model in self.config.get("special_handling_models", []):
+        #     pass
             
         # Special handling for large parameter models
         if "70b" in primary_model or "32b" in primary_model or "22b" in primary_model:

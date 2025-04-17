@@ -53,8 +53,11 @@ async def main():
     # Execute the workflow
     print("\n=== Starting conversation between expert models ===\n")
     print("Messages will be displayed in real-time as models respond...\n")
+
+    # Extract workflow name from path if a path is provided
+    workflow_name = os.path.splitext(os.path.basename(args.workflow))[0]
     
-    results = await orchestrator.execute_workflow(args.workflow, input_data)
+    results = await orchestrator.execute_workflow(workflow_name, input_data)
     
     # Save results to output file
     with open(args.output, "w") as f:
