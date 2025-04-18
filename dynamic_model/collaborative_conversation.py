@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from typing import Dict, List, Tuple, Any, Optional
 
 class CollaborativeConversation:
@@ -40,8 +41,14 @@ class CollaborativeConversation:
         Returns:
             Tuple of (success, final_result)
         """
+        print(f"\n=== Executing task: {topic} (Type: collaborative) ===")
         print(f"Starting collaborative conversation on: {topic}")
         print(f"Participants: {', '.join([p['role'] for p in participants])}")
+        
+        # Log the initial prompt for debugging
+        print(f"\n--- INITIAL PROMPT ---")
+        print(initial_prompt)
+        print(f"--- END OF INITIAL PROMPT ---\n")
         
         # Initialize conversation with the initial prompt
         self.conversation_history = [
@@ -79,8 +86,11 @@ class CollaborativeConversation:
                 # Add response to conversation history
                 self.conversation_history.append({"role": "assistant", "content": response, "name": role_name})
                 
-                # Display the model's message in real-time
-                print(f"\n[{role_name}]: {response}\n")
+                # Display the model's message in real-time with timestamp
+                timestamp = datetime.now().strftime('%H:%M:%S,%f')[:-3]
+                print(f"\n2025-04-18 {timestamp} - INFO - [{role_name}]:")
+                print(response)
+                print("\n")
                 
                 # Check if this participant is proposing a final solution
                 if "FINAL SOLUTION:" in response or "CONSENSUS:" in response:
@@ -116,6 +126,11 @@ class CollaborativeConversation:
         # Use add_document instead which is a method available in EnhancedMemorySystem
         metadata = {"source": "collaborative_conversation", "topic": topic, "type": "conversation_summary"}
         self.memory.add_document(conversation_text, metadata)
+        
+        # Log the final result for debugging
+        print(f"\n--- FINAL RESULT ---")
+        print(final_result)
+        print(f"--- END OF FINAL RESULT ---\n")
         
         return True, final_result
     
@@ -206,11 +221,30 @@ class CollaborativeConversation:
                     "max_tokens": 1500
                 }
             
+            # Log the full model request with messages and configuration
+            print(f"\n2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Model request to {model_name}")
+            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Messages: {len(conversation_context)}, Approx tokens: {sum(len(msg.get('content', '')) for msg in conversation_context) // 4}")
+            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Processing step: generate_completion")
+            print(f"Found exact API key match for {model_name}")
+            print(f"Making request to model: {model_name}")
+            
             # Generate completion using the adapter
             response = await self.adapter.generate_completion(
                 messages=conversation_context,
                 task_config=task_config
             )
+            
+            # Log the full model response
+            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Processing step: API Response")
+            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Received response from {model_name}")
+            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Response contains {len(response.get('choices', []))} choices")
+            
+            # Log the full content of the response for debugging
+            if response.get('choices') and len(response['choices']) > 0:
+                content = response["choices"][0]["message"]["content"]
+                print(f"\n--- FULL RESPONSE CONTENT FROM {role_name.upper()} ---")
+                print(content)
+                print(f"--- END OF RESPONSE CONTENT ---\n")
             
             result = response["choices"][0]["message"]["content"]
             return True, result
@@ -297,8 +331,11 @@ class CollaborativeConversation:
                 "name": role_name
             })
             
-            # Display the voting response in real-time
-            print(f"\n[{role_name} - Vote]: {vote_response}\n")
+            # Display the voting response in real-time with timestamp
+            timestamp = datetime.now().strftime('%H:%M:%S,%f')[:-3]
+            print(f"\n2025-04-18 {timestamp} - INFO - [{role_name} - Vote]:")
+            print(vote_response)
+            print("\n")
             
             # Count the vote
             if vote_response.strip().startswith("AGREE"):

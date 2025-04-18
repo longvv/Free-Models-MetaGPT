@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaGPT Configuration</title>
+    <link rel="stylesheet" href="/visualization/styles.css">
+    <style>
+        .config-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-section {
+            background-color: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .file-input {
+            margin-bottom: 10px;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            margin-right: 5px;
+            border-radius: 5px 5px 0 0;
+        }
+        .tab.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .file-list {
+            margin-top: 20px;
+        }
+        .file-item {
+            padding: 10px;
+            background-color: #e9e9e9;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .file-item button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MetaGPT Configuration</h1>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/config" class="active">Configuration</a>
+        </nav>
+    </div>
+
+    <div class="config-container">
+        <div class="tabs">
+            <div class="tab active" data-tab="workflows">Workflows</div>
+            <div class="tab" data-tab="configs">Configuration</div>
+            <div class="tab" data-tab="roles">Roles</div>
+        </div>
+
+        <div class="tab-content active" id="workflows">
+            <div class="upload-section">
+                <h2>Upload Workflow File</h2>
+                <p>Upload YAML files defining collaborative workflows</p>
+                <form id="workflow-form" enctype="multipart/form-data">
+                    <div class="file-input">
+                        <input type="file" name="file" accept=".yml,.yaml" required>
+                    </div>
+                    <button type="submit" class="button">Upload Workflow</button>
+                </form>
+            </div>
+            <div class="file-list" id="workflow-files">
+                <h3>Current Workflows</h3>
+                <!-- Workflow files will be listed here -->
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="configs">
+            <div class="upload-section">
+                <h2>Upload Configuration File</h2>
+                <p>Upload YAML files with model configurations and API keys</p>
+                <form id="config-form" enctype="multipart/form-data">
+                    <div class="file-input">
+                        <input type="file" name="file" accept=".yml,.yaml" required>
+                    </div>
+                    <button type="submit" class="button">Upload Configuration</button>
+                </form>
+            </div>
+            <div class="file-list" id="config-files">
+                <h3>Current Configurations</h3>
+                <!-- Config files will be listed here -->
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="roles">
+            <div class="upload-section">
+                <h2>Upload Role Definitions</h2>
+                <p>Upload YAML files defining roles and their prompts</p>
+                <form id="role-form" enctype="multipart/form-data">
+                    <div class="file-input">
+                        <input type="file" name="file" accept=".yml,.yaml" required>
+                    </div>
+                    <button type="submit" class="button">Upload Role Definition</button>
+                </form>
+            </div>
+            <div class="file-list" id="role-files">
+                <h3>Current Role Definitions</h3>
+                <!-- Role files will be listed here -->
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all tabs
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Form submissions
+        document.getElementById('workflow-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            try {
+                const response = await fetch('/api/upload/workflow', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) throw new Error('Upload failed');
+                const result = await response.json();
+                alert('Workflow uploaded successfully!');
+                loadFiles('workflow');
+            } catch (error) {
+                alert('Error uploading workflow: ' + error.message);
+            }
+        });
+
+        document.getElementById('config-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            try {
+                const response = await fetch('/api/upload/config', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) throw new Error('Upload failed');
+                const result = await response.json();
+                alert('Configuration uploaded successfully!');
+                loadFiles('config');
+            } catch (error) {
+                alert('Error uploading configuration: ' + error.message);
+            }
+        });
+
+        document.getElementById('role-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            try {
+                const response = await fetch('/api/upload/role', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) throw new Error('Upload failed');
+                const result = await response.json();
+                alert('Role definition uploaded successfully!');
+                loadFiles('role');
+            } catch (error) {
+                alert('Error uploading role definition: ' + error.message);
+            }
+        });
+
+        // Load existing files
+        async function loadFiles(type) {
+            const container = document.getElementById(`${type}-files`);
+            try {
+                const response = await fetch(`/api/files/${type}`);
+                if (!response.ok) throw new Error('Failed to load files');
+                const files = await response.json();
+                
+                if (files.length === 0) {
+                    container.innerHTML = `<p>No ${type} files found.</p>`;
+                    return;
+                }
+
+                let html = `<h3>Current ${type.charAt(0).toUpperCase() + type.slice(1)} Files</h3>`;
+                files.forEach(file => {
+                    html += `
+                    <div class="file-item">
+                        <span>${file.name}</span>
+                        <button onclick="deleteFile('${type}', '${file.name}')">Delete</button>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            } catch (error) {
+                container.innerHTML = `<p>Error loading files: ${error.message}</p>`;
+            }
+        }
+
+        // Delete a file
+        async function deleteFile(type, filename) {
+            if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
+            
+            try {
+                const response = await fetch(`/api/files/${type}/${filename}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error('Delete failed');
+                alert('File deleted successfully!');
+                loadFiles(type);
+            } catch (error) {
+                alert('Error deleting file: ' + error.message);
+            }
+        }
+
+        // Load files on page load
+        window.onload = () => {
+            loadFiles('workflow');
+            loadFiles('config');
+            loadFiles('role');
+        };
+    </script>
+</body>
+</html>

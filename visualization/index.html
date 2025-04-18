@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaGPT Team Chat Visualization</title>
+    <link rel="stylesheet" href="/visualization/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="app-title">
+                <h1>MetaGPT</h1>
+                <p>Team Chat Visualization</p>
+            </div>
+            <div class="team-members">
+                <h2>Team Members</h2>
+                <ul id="team-member-list">
+                    <!-- Team members will be populated here -->
+                </ul>
+            </div>
+        </div>
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>Project Discussion</h2>
+                <div class="header-controls">
+                    <button id="clear-chat">Clear Chat</button>
+                    <button id="load-sample">Load Sample</button>
+                    <button id="open-config">Configure</button>
+                    <button id="run-metagpt">Run MetaGPT</button>
+                </div>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <!-- Messages will appear here -->
+            </div>
+            <div class="file-controls">
+                <div class="file-control-top">
+                    <input type="file" id="file-input" accept=".json">
+                    <label for="file-input">Load from Output JSON</label>
+                    <span id="file-name"></span>
+                    <a href="http://localhost:8000/docs" target="_blank" class="api-link">API Docs</a>
+                </div>
+                <div class="input-container">
+                    <div class="prompt-container">
+                        <input type="text" id="prompt-input" placeholder="Enter your prompt here...">
+                        <button id="submit-prompt">Submit</button>
+                    </div>
+                </div>
+                
+                <!-- Configuration Modal -->
+                <div id="config-modal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>MetaGPT Configuration</h3>
+                            <span class="close">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <div class="config-options">
+                                <div class="config-group">
+                                    <label for="workflow-select">Select Workflow:</label>
+                                    <select id="workflow-select" class="config-select">
+                                        <option value="">Default Workflow</option>
+                                        <!-- Workflows will be populated here -->
+                                    </select>
+                                </div>
+                                
+                                <div class="config-group">
+                                    <label for="config-select">Select Configuration:</label>
+                                    <select id="config-select" class="config-select">
+                                        <option value="">Default Config</option>
+                                        <!-- Configs will be populated here -->
+                                    </select>
+                                </div>
+                                
+                                <div class="config-actions">
+                                    <a href="/config" class="manage-files-btn">Manage Configuration Files</a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="save-config" class="primary-button">Save Configuration</button>
+                            <button id="cancel-config" class="secondary-button">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Load workflow and config files when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadWorkflowFiles();
+            loadConfigFiles();
+            setupConfigModal();
+        });
+        
+        // Load workflow files
+        function loadWorkflowFiles() {
+            fetch('/api/files/workflow')
+                .then(response => response.json())
+                .then(data => {
+                    const workflowSelect = document.getElementById('workflow-select');
+                    // Clear existing options except the default
+                    while (workflowSelect.options.length > 1) {
+                        workflowSelect.remove(1);
+                    }
+                    
+                    // Add options for each workflow file
+                    data.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file.name;
+                        option.textContent = file.name;
+                        workflowSelect.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Error loading workflow files:', error));
+        }
+        
+        // Load config files
+        function loadConfigFiles() {
+            fetch('/api/files/config')
+                .then(response => response.json())
+                .then(data => {
+                    const configSelect = document.getElementById('config-select');
+                    // Clear existing options except the default
+                    while (configSelect.options.length > 1) {
+                        configSelect.remove(1);
+                    }
+                    
+                    // Add options for each config file
+                    data.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file.name;
+                        option.textContent = file.name;
+                        configSelect.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Error loading config files:', error));
+        }
+        
+        // Role configuration
+        const ROLES = {
+            "requirements_analyst": {
+                displayName: "Requirements Analyst",
+                color: "#2196F3",
+                initials: "RA"
+            },
+            "architect": {
+                displayName: "System Architect",
+                color: "#FF9800",
+                initials: "SA"
+            },
+            "project_manager": {
+                displayName: "Project Manager",
+                color: "#673AB7",
+                initials: "PM"
+            },
+            "developer": {
+                displayName: "Developer",
+                color: "#4CAF50",
+                initials: "DEV"
+            },
+            "qa_engineer": {
+                displayName: "QA Engineer",
+                color: "#E91E63",
+                initials: "QA"
+            },
+            "security_expert": {
+                displayName: "Security Expert",
+                color: "#F44336",
+                initials: "SEC"
+            },
+            "technical_lead": {
+                displayName: "Technical Lead",
+                color: "#9C27B0",
+                initials: "TL"
+            },
+            "user_advocate": {
+                displayName: "User Advocate",
+                color: "#00BCD4",
+                initials: "UX"
+            },
+            "domain_expert": {
+                displayName: "Domain Expert",
+                color: "#795548",
+                initials: "DE"
+            },
+            "code_reviewer": {
+                displayName: "Code Reviewer",
+                color: "#607D8B",
+                initials: "CR"
+            },
+            "technical_writer": {
+                displayName: "Technical Writer",
+                color: "#009688",
+                initials: "TW"
+            },
+            "security_auditor": {
+                displayName: "Security Auditor",
+                color: "#FF5722",
+                initials: "SA"
+            }
+        };
+
+        // Map MetaGPT output.json keys to role names
+        const OUTPUT_TO_ROLE_MAP = {
+            "requirements_analysis": "requirements_analyst",
+            "system_design": "architect",
+            "implementation_planning": "project_manager",
+            "code_generation": "developer",
+            "code_review": "code_reviewer"
+        };
+
+        // Populate team members in sidebar
+        function populateTeamMembers() {
+            const teamList = document.getElementById('team-member-list');
+            teamList.innerHTML = '';
+            
+            for (const [roleId, roleInfo] of Object.entries(ROLES)) {
+                const li = document.createElement('li');
+                li.className = 'team-member';
+                li.setAttribute('data-role', roleId);
+                
+                li.innerHTML = `
+                    <div class="message-avatar role-${roleId.replace('_', '-')}" style="background-color: ${roleInfo.color}">
+                        ${roleInfo.initials}
+                    </div>
+                    <span class="team-member-name">${roleInfo.displayName}</span>
+                `;
+                
+                teamList.appendChild(li);
+            }
+        }
+
+        // Create a chat message
+        function createMessage(roleName, content, timestamp = new Date()) {
+            const role = ROLES[roleName] || {
+                displayName: roleName,
+                color: "#6c757d",
+                initials: roleName.substring(0, 2).toUpperCase()
+            };
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.setAttribute('data-role', roleName);
+            
+            const time = new Date(timestamp);
+            const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            messageDiv.innerHTML = `
+                <div class="message-avatar role-${roleName.replace('_', '-')}" style="background-color: ${role.color}">
+                    ${role.initials}
+                </div>
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-sender">${role.displayName}</span>
+                        <span class="message-time">${timeStr}</span>
+                    </div>
+                    <div class="message-body">
+                        ${marked.parse(content)}
+                    </div>
+                </div>
+            `;
+            
+            return messageDiv;
+        }
+
+        // Process MetaGPT output.json
+        function processOutputJson(data) {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.innerHTML = '';
+            
+            // Create a welcome message
+            const welcomeMsg = createMessage("technical_lead", "# Project Discussion Started\n\nWelcome to the team conversation for this project. Let's collaborate to build something great!");
+            chatMessages.appendChild(welcomeMsg);
+            
+            // Process each section of the output
+            for (const [key, value] of Object.entries(data)) {
+                // Skip validation entries
+                if (key.endsWith('_validation')) {
+                    continue;
+                }
+                
+                // Skip failed items
+                if (typeof value === 'string' && value.startsWith('Failed')) {
+                    continue;
+                }
+                
+                // Map the output key to a role
+                const roleId = OUTPUT_TO_ROLE_MAP[key] || "technical_lead";
+                
+                // Create and add the message
+                if (value && typeof value === 'string') {
+                    const message = createMessage(roleId, value);
+                    chatMessages.appendChild(message);
+                }
+            }
+            
+            // If we had validation failures, add them as QA feedback
+            for (const [key, value] of Object.entries(data)) {
+                if (key.endsWith('_validation') && value !== "Success") {
+                    const baseKey = key.replace('_validation', '');
+                    const feedbackMsg = `## Validation Failed for ${baseKey}\n\n${value}`;
+                    const message = createMessage("qa_engineer", feedbackMsg);
+                    chatMessages.appendChild(message);
+                }
+            }
+            
+            // Scroll to the bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Handle file upload
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('file-name').textContent = file.name;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    processOutputJson(data);
+                } catch (err) {
+                    alert('Error processing JSON file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        // Clear chat
+        document.getElementById('clear-chat').addEventListener('click', function() {
+            document.getElementById('chat-messages').innerHTML = '';
+            document.getElementById('file-name').textContent = '';
+        });
+
+        // Load sample data
+        document.getElementById('load-sample').addEventListener('click', function() {
+            fetch('/output.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    document.getElementById('file-name').textContent = 'output.json (sample)';
+                    processOutputJson(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching sample data:', error);
+                    alert('Error loading sample data. Is the API server running?');
+                });
+        });
+        
+        // Run MetaGPT with a prompt
+        document.getElementById('submit-prompt').addEventListener('click', function() {
+            submitPrompt();
+        });
+        
+        // Also submit prompt when Enter key is pressed in the input field
+        document.getElementById('prompt-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                submitPrompt();
+            }
+        });
+        
+        // Modal dialog functionality
+        function setupConfigModal() {
+            const modal = document.getElementById('config-modal');
+            const openBtn = document.getElementById('open-config');
+            const closeBtn = document.querySelector('.close');
+            const saveBtn = document.getElementById('save-config');
+            const cancelBtn = document.getElementById('cancel-config');
+            
+            // Current selections
+            let currentWorkflow = '';
+            let currentConfig = '';
+            
+            // Open modal
+            openBtn.onclick = function() {
+                modal.style.display = 'block';
+                // Set the selects to current values
+                document.getElementById('workflow-select').value = currentWorkflow;
+                document.getElementById('config-select').value = currentConfig;
+            }
+            
+            // Close modal
+            closeBtn.onclick = function() {
+                modal.style.display = 'none';
+            }
+            
+            // Cancel button
+            cancelBtn.onclick = function() {
+                modal.style.display = 'none';
+            }
+            
+            // Save configurations
+            saveBtn.onclick = function() {
+                currentWorkflow = document.getElementById('workflow-select').value;
+                currentConfig = document.getElementById('config-select').value;
+                
+                // Show confirmation
+                const workflowName = currentWorkflow || 'Default Workflow';
+                const configName = currentConfig || 'Default Config';
+                alert(`Configuration saved!\nWorkflow: ${workflowName}\nConfig: ${configName}`);
+                
+                modal.style.display = 'none';
+            }
+            
+            // Close if clicked outside
+            window.onclick = function(event) {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            }
+        }
+        
+        // Submit prompt to the API
+        function submitPrompt() {
+            const promptInput = document.getElementById('prompt-input');
+            const prompt = promptInput.value.trim();
+            
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+            
+            const chatMessages = document.getElementById('chat-messages');
+            const loadingMsg = createMessage("technical_lead", "*Processing your request with MetaGPT... This may take a few minutes.*");
+            chatMessages.appendChild(loadingMsg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // Disable the submit button and input field while processing
+            const submitButton = document.getElementById('submit-prompt');
+            submitButton.disabled = true;
+            promptInput.disabled = true;
+            submitButton.textContent = 'Processing...';
+            
+            // Use the current workflow and config selections from the modal
+            const workflowFile = document.getElementById('workflow-select').value;
+            const configFile = document.getElementById('config-select').value;
+            
+            // Call the MetaGPT API
+            fetch('/api/run_metagpt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    prompt: prompt,
+                    workflow_file: workflowFile || null, 
+                    config_file: configFile || null 
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Remove the loading message
+                chatMessages.removeChild(loadingMsg);
+                
+                // Process and display the result
+                if (data.status === 'success') {
+                    processOutputJson(data.result);
+                    document.getElementById('file-name').textContent = 'MetaGPT Output';
+                } else {
+                    const errorMsg = createMessage("qa_engineer", `**Error Processing Request**\n\n${data.error}`);
+                    chatMessages.appendChild(errorMsg);
+                }
+            })
+            .catch(error => {
+                // Remove the loading message
+                chatMessages.removeChild(loadingMsg);
+                
+                // Display error message
+                const errorMsg = createMessage("qa_engineer", `**Error Processing Request**\n\n${error.message}`);
+                chatMessages.appendChild(errorMsg);
+            })
+            .finally(() => {
+                // Re-enable the submit button and input field
+                submitButton.disabled = false;
+                promptInput.disabled = false;
+                submitButton.textContent = 'Submit';
+                promptInput.value = '';
+            });
+        }
+        
+        // Run MetaGPT manually
+        document.getElementById('run-metagpt').addEventListener('click', function() {
+            const chatMessages = document.getElementById('chat-messages');
+            const loadingMsg = createMessage("technical_lead", "*Running MetaGPT with default parameters... This may take a few minutes.*");
+            chatMessages.appendChild(loadingMsg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // Disable the button while processing
+            const runButton = document.getElementById('run-metagpt');
+            runButton.disabled = true;
+            runButton.textContent = 'Processing...';
+            
+            // Call the MetaGPT API
+            fetch('/api/run_metagpt_default', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Remove the loading message
+                chatMessages.removeChild(loadingMsg);
+                
+                // Process and display the result
+                if (data.status === 'success') {
+                    processOutputJson(data.result);
+                    document.getElementById('file-name').textContent = 'MetaGPT Output';
+                } else {
+                    const errorMsg = createMessage("qa_engineer", `**Error Running MetaGPT**\n\n${data.error}`);
+                    chatMessages.appendChild(errorMsg);
+                }
+            })
+            .catch(error => {
+                // Remove the loading message
+                chatMessages.removeChild(loadingMsg);
+                
+                // Display error message
+                const errorMsg = createMessage("qa_engineer", `**Error Running MetaGPT**\n\n${error.message}`);
+                chatMessages.appendChild(errorMsg);
+            })
+            .finally(() => {
+                // Re-enable the button
+                runButton.disabled = false;
+                runButton.textContent = 'Run MetaGPT';
+            });
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            populateTeamMembers();
+            
+            // Add a starting message
+            const chatMessages = document.getElementById('chat-messages');
+            const startMsg = createMessage("technical_lead", "Welcome to MetaGPT Team Chat Visualization\n\nLoad a conversation by clicking 'Load from Output JSON' or 'Load Sample' to see the team discussion.");
+            chatMessages.appendChild(startMsg);
+        });
+    </script>
+</body>
+</html>

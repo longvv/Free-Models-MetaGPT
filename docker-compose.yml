@@ -1,0 +1,37 @@
+services:
+  metagpt-api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      args:
+        - BUILDPLATFORM=linux/arm64
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+      - ./workspace:/app/workspace
+      - ./config.yml:/app/config.yml
+      - ./workflows:/app/workflows
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8000:8000"
+    networks:
+      - metagpt_network
+
+  visualization:
+    build:
+      context: .
+      dockerfile: visualization/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/workspace
+      - ./visualization:/app
+      - ./workflows:/app/workflows
+      - ./config:/app/config
+    ports:
+      - "8088:8088"
+    networks:
+      - metagpt_network
+
+networks:
+  metagpt_network:
