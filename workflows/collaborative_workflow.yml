@@ -10,11 +10,9 @@ stages:
     description: Analyze and clarify requirements through a collaborative conversation
     participants:
       - role: requirements_analysis
-        primary_model: deepseek/deepseek-chat-v3-0324:free
       - role: domain_expert
-        primary_model: meta-llama/llama-4-maverick:free
       - role: user_advocate
-        primary_model: google/gemini-2.5-pro-exp-03-25:free
+      - role: technical_lead
     validation:
       required_sections:
         - Problem Statement

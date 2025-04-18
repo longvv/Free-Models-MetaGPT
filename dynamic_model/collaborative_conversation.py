@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Any, Optional
 
@@ -26,6 +27,14 @@ class CollaborativeConversation:
         self.max_turns = config.get("max_conversation_turns", 10)
         self.min_turns = config.get("min_conversation_turns", 3)
         self.consensus_threshold = config.get("consensus_threshold", 0.8)
+        
+        # Setup API response logging
+        self.log_api_responses = config.get("log_api_responses", True)
+        self.api_log_dir = config.get("api_log_dir", "logs")
+        
+        # Create logs directory if it doesn't exist
+        if self.log_api_responses and not os.path.exists(self.api_log_dir):
+            os.makedirs(self.api_log_dir)
     
     async def start_conversation(self, 
                                topic: str, 
@@ -239,18 +248,63 @@ class CollaborativeConversation:
             print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Received response from {model_name}")
             print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - Response contains {len(response.get('choices', []))} choices")
             
+            # Log the full API response to a file for debugging empty responses
+            if self.log_api_responses:
+                self._log_api_response(model_name, role_name, response)
+            
             # Log the full content of the response for debugging
             if response.get('choices') and len(response['choices']) > 0:
-                content = response["choices"][0]["message"]["content"]
+                # Handle different response formats based on model provider
+                choice = response["choices"][0]
+                message = choice.get("message", {})
+                
+                # Extract content from message - handle nested structure for models like deepseek
+                if isinstance(message, dict):
+                    if "content" in message:
+                        content = message["content"]
+                    else:
+                        print(f"Warning: Couldn't find content in message structure: {json.dumps(message, indent=2)}")
+                        return False, f"Error: Could not extract content from {model_name} response"
+                else:
+                    content = str(message)
+                
+                # Special handling for deepseek model response format
+                # Check if this is a response object with nested structure in the API response logs
+                if not content and isinstance(response.get("response"), dict):
+                    deepseek_choices = response.get("response", {}).get("choices", [])
+                    if deepseek_choices and len(deepseek_choices) > 0:
+                        deepseek_message = deepseek_choices[0].get("message", {})
+                        if isinstance(deepseek_message, dict) and "content" in deepseek_message:
+                            content = deepseek_message["content"]
+                
                 print(f"\n--- FULL RESPONSE CONTENT FROM {role_name.upper()} ---")
                 print(content)
                 print(f"--- END OF RESPONSE CONTENT ---\n")
-            
-            result = response["choices"][0]["message"]["content"]
-            return True, result
+                
+                # Store the result
+                result = content
+                return True, result
+            else:
+                # Handle case where response doesn't contain expected content
+                print(f"Warning: Response from {role_name} doesn't contain expected content structure")
+                print(f"Response structure: {json.dumps(response, indent=2)}")
+                
+                # Log empty response error to file
+                if self.log_api_responses:
+                    self._log_api_response(model_name, role_name, response, is_error=True)
+                    
+                return False, f"Error: Invalid response structure from {model_name}"
             
         except Exception as e:
             print(f"Error generating response for {role_name}: {str(e)}")
+            # Log more detailed error information for debugging
+            import traceback
+            print(f"Detailed error traceback: {traceback.format_exc()}")
+            # Log exception to file
+            if self.log_api_responses:
+                error_response = {"error": str(e), "traceback": traceback.format_exc()}
+                self._log_api_response(model_name, role_name, error_response, is_error=True)
+                
             return False, f"Error: {str(e)}"
     
     def _extract_final_solution(self, response: str) -> str:
@@ -361,40 +415,88 @@ class CollaborativeConversation:
         Returns:
             The compiled final result
         """
-        # Use a designated summarizer (e.g., the first participant) to compile the result
-        summarizer = participants[0]
-        role_name = summarizer["role"]
-        model_name = summarizer.get("model")
-        
-        # Prepare summarization prompt
-        summary_prompt = "The conversation has reached the maximum number of turns without consensus. "
-        summary_prompt += "Please compile a final result that incorporates the most valuable insights "
-        summary_prompt += "and contributions from all participants. Focus on areas of agreement "
-        summary_prompt += "and resolve conflicts where possible.\n\n"
-        summary_prompt += "Conversation history:\n"
-        
-        # Add condensed conversation history
-        for message in self.conversation_history:
-            if message["role"] == "assistant" and "name" in message:
-                speaker = message["name"]
-                # Add just the first 200 characters of each message to avoid token limits
-                content = message["content"][:200] + "..." if len(message["content"]) > 200 else message["content"]
-                summary_prompt += f"\n{speaker}: {content}"
-        
-        # Create summarization context
-        summary_context = [
-            {"role": "system", "content": "You are a neutral facilitator tasked with compiling a final result from a collaborative conversation."},
-            {"role": "user", "content": summary_prompt}
-        ]
-        
-        # Generate summary
-        success, summary = await self._generate_participant_response(
-            "Facilitator", 
-            model_name, 
-            summary_context
-        )
-        
-        if not success:
+        try:
+            # Use a designated summarizer (e.g., the first participant) to compile the result
+            summarizer = participants[0]
+            role_name = summarizer["role"]
+            model_name = summarizer.get("model")
+            
+            # Prepare summarization prompt
+            summary_prompt = "The conversation has reached the maximum number of turns without consensus. "
+            summary_prompt += "Please compile a final result that incorporates the most valuable insights "
+            summary_prompt += "and contributions from all participants. Focus on areas of agreement "
+            summary_prompt += "and resolve conflicts where possible.\n\n"
+            summary_prompt += "Conversation history:\n"
+            
+            # Add condensed conversation history
+            for message in self.conversation_history:
+                if message["role"] == "assistant" and "name" in message:
+                    speaker = message["name"]
+                    # Add just the first 200 characters of each message to avoid token limits
+                    content = message["content"][:200] + "..." if len(message["content"]) > 200 else message["content"]
+                    summary_prompt += f"\n{speaker}: {content}"
+            
+            # Create summarization context
+            summary_context = [
+                {"role": "system", "content": "You are a neutral facilitator tasked with compiling a final result from a collaborative conversation."},
+                {"role": "user", "content": summary_prompt}
+            ]
+            
+            # Log the summarization attempt
+            print(f"\n--- ATTEMPTING TO COMPILE FINAL RESULT ---")
+            print(f"Using {role_name} with model {model_name} as summarizer")
+            
+            # Generate summary
+            success, summary = await self._generate_participant_response(
+                "Facilitator", 
+                model_name, 
+                summary_context
+            )
+            
+            if not success:
+                print(f"Failed to compile final result: Summarization attempt unsuccessful")
+                return "Failed to compile final result due to an error."
+            
+            # Log successful compilation
+            print(f"\n--- SUCCESSFULLY COMPILED FINAL RESULT ---")
+            return summary
+            
+        except Exception as e:
+            import traceback
+            print(f"Error compiling final result: {str(e)}")
+            print(f"Detailed error traceback: {traceback.format_exc()}")
             return "Failed to compile final result due to an error."
+            
+    def _log_api_response(self, model_name: str, role_name: str, response: Dict[str, Any], is_error: bool = False) -> None:
+        """Log the full API response to a file for debugging purposes.
         
-        return summary
+        Args:
+            model_name: The name of the model used
+            role_name: The name of the participant role
+            response: The full API response object
+            is_error: Whether this is an error response
+        """
+        try:
+            # Create a timestamp for the log filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            status = "error" if is_error else "success"
+            filename = f"{self.api_log_dir}/api_response_{model_name.replace('/', '_')}_{role_name}_{status}_{timestamp}.json"
+            
+            # Add metadata to the logged response
+            log_data = {
+                "timestamp": datetime.now().isoformat(),
+                "model": model_name,
+                "role": role_name,
+                "status": status,
+                "response": response
+            }
+            
+            # Write the response to the log file
+            with open(filename, 'w') as f:
+                json.dump(log_data, f, indent=2)
+                
+            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - API response logged to {filename}")
+            
+        except Exception as e:
+            print(f"Error logging API response: {str(e)}")
+            # Don't let logging errors affect the main process
