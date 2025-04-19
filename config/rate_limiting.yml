@@ -1,0 +1,35 @@
+# Rate Limiting Configuration
+# This file contains settings for the enhanced rate limiting adapter
+
+# Global rate limiting settings
+global:
+  requests_per_minute: 15  # Conservative limit for OpenRouter free tier
+  bucket_capacity: 20      # Maximum tokens the bucket can hold
+  refill_rate: 0.25        # Tokens per second (15 per minute)
+  max_parallel: 2          # Maximum parallel requests
+  jitter_factor: 0.3       # Random factor to add to wait times (0.0-1.0)
+
+# Retry settings
+retry:
+  max_retries: 5           # Maximum number of retries for rate-limited requests
+  base_retry_delay: 2.0    # Base delay in seconds before retrying
+  max_retry_delay: 60.0    # Maximum delay in seconds before retrying
+  request_delay: 1.0       # Minimum delay between consecutive requests
+
+# Model-specific rate limits
+# These override the global settings for specific models
+model_specific:
+  "deepseek/deepseek-chat-v3-0324:free":
+    requests_per_minute: 10
+    refill_rate: 0.17      # 10 per minute
+  "anthropic/claude-3-haiku:free":
+    requests_per_minute: 12
+    refill_rate: 0.20      # 12 per minute
+
+# Conversation pacing
+# Settings to control the pace of collaborative conversations
+conversation_pacing:
+  min_delay_between_turns: 2.0    # Minimum seconds between conversation turns
+  delay_after_rate_limit: 10.0    # Seconds to wait after hitting a rate limit
+  max_consecutive_requests: 5      # Maximum consecutive requests before forced delay
+  forced_delay: 5.0               # Seconds to wait after max_consecutive_requests

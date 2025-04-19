@@ -256,15 +256,35 @@ class RoleManager:
         return role.get("model_preferences") if role else None
 
 class DynamicConfigManager:
-    """Manages dynamic configuration loading and access for the system."""
+    """Dynamic configuration manager for loading and managing configuration."""
     
-    def __init__(self, config_path: str = str(CONFIG_PATH)):
-        """Initialize the dynamic configuration manager.
+    def __init__(self, config_path: str):
+        """Initialize the configuration manager.
         
         Args:
-            config_path: Path to the main YAML configuration file
+            config_path: Path to configuration file
         """
-        self.config_path = Path(config_path)
+        # Convert string path to Path object
+        if isinstance(config_path, str):
+            # Handle both absolute and relative paths
+            if os.path.isabs(config_path):
+                self.config_path = Path(config_path)
+            else:
+                # Try relative to current directory
+                if os.path.exists(config_path):
+                    self.config_path = Path(os.path.abspath(config_path))
+                else:
+                    # Try relative to script directory
+                    script_dir = Path(__file__).parent
+                    alt_path = script_dir / config_path
+                    if alt_path.exists():
+                        self.config_path = alt_path
+                    else:
+                        # Just store the path and we'll check existence in initialize()
+                        self.config_path = Path(config_path)
+        else:
+            self.config_path = config_path
+            
         self.config = {}
         self.model_registry = None
         self.role_manager = None
@@ -273,8 +293,21 @@ class DynamicConfigManager:
     async def initialize(self) -> None:
         """Load configuration and initialize managers."""
         if not self.config_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
+            # Try to find the config file in common locations
+            potential_paths = [
+                self.config_path,
+                Path(os.getcwd()) / self.config_path.name,
+                Path(__file__).parent / self.config_path.name,
+                Path(__file__).parent / "config" / self.config_path.name
+            ]
             
+            for path in potential_paths:
+                if path.exists():
+                    self.config_path = path
+                    break
+            else:
+                raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
+        
         try:
             with open(self.config_path, 'r') as f:
                 self.config = yaml.safe_load(f)
