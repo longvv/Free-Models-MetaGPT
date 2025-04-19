@@ -339,7 +339,7 @@ class EnhancedRateLimitingAdapter:
                     elif response.status == 429:
                         # Rate limit exceeded
                         error_text = await response.text()
-                        log_error(f"Rate limit exceeded for {model}: {error_text}")
+                        log_error("RATE_LIMIT_ERROR", f"Rate limit exceeded for {model}: {error_text}")
                         
                         # Check if we should retry
                         if retry_count < self.max_retries:
@@ -376,7 +376,7 @@ class EnhancedRateLimitingAdapter:
                     else:
                         # Other error
                         error_text = await response.text()
-                        log_error(f"API error for {model}: {response.status} - {error_text}")
+                        log_error("API_ERROR", f"API error for {model}: {response.status} - {error_text}")
                         
                         error_data = {
                             "error": {
@@ -392,7 +392,7 @@ class EnhancedRateLimitingAdapter:
                         return error_data
                         
         except asyncio.TimeoutError:
-            log_error(f"Request timeout for {model}")
+            log_error("TIMEOUT_ERROR", f"Request timeout for {model}")
             
             # Check if we should retry
             if retry_count < self.max_retries:
@@ -422,7 +422,7 @@ class EnhancedRateLimitingAdapter:
                 return error_data
                 
         except Exception as e:
-            log_error(f"Request error for {model}: {str(e)}")
+            log_error("REQUEST_ERROR", f"Request error for {model}: {str(e)}")
             
             error_data = {
                 "error": {
@@ -437,11 +437,12 @@ class EnhancedRateLimitingAdapter:
             return error_data
     
     async def generate_completion(self, 
-                               model: str, 
-                               messages: List[Dict[str, str]], 
+                               model: str = None, 
+                               messages: List[Dict[str, str]] = None, 
                                temperature: float = 0.7,
                                max_tokens: int = 1000,
-                               priority: int = 5) -> Dict[str, Any]:
+                               priority: int = 5,
+                               task_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """Generate a completion using the OpenRouter API.
         
         Args:
@@ -450,12 +451,26 @@ class EnhancedRateLimitingAdapter:
             temperature: Temperature parameter for generation
             max_tokens: Maximum tokens to generate
             priority: Request priority (lower is higher priority)
+            task_config: Optional task configuration dictionary
             
         Returns:
             API response dictionary
         """
         # Create a unique request ID
-        request_id = f"{model}_{int(time.time())}_{random.randint(1000, 9999)}"
+        request_id = f"{model or 'unknown'}_{int(time.time())}_{random.randint(1000, 9999)}"
+        
+        # Handle case where only messages and task_config are provided
+        if model is None and task_config is not None:
+            # Extract model from task_config - handle both direct model field and nested structure
+            if 'model' in task_config:
+                model = task_config.get('model')
+            elif 'primary' in task_config and isinstance(task_config['primary'], dict):
+                model = task_config['primary'].get('model')
+                temperature = task_config['primary'].get('temperature', temperature)
+                max_tokens = task_config['primary'].get('max_tokens', max_tokens)
+            
+            if not model:
+                raise ValueError("No model specified in either parameters or task_config")
         
         # Create the coroutine
         coroutine = self._make_request(model, messages, temperature, max_tokens)
