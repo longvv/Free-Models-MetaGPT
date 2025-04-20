@@ -56,6 +56,8 @@ body {
 
 .team-members {
   flex-grow: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .team-members h2 {
@@ -67,6 +69,10 @@ body {
 
 #team-member-list {
   list-style-type: none;
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 
 .team-member {

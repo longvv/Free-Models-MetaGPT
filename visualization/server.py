@@ -307,12 +307,20 @@ async def run_metagpt(prompt_request: PromptRequest, background_tasks: Backgroun
         job_dir = os.path.join(logs_dir, job_id)
         os.makedirs(job_dir, exist_ok=True)
         
+        # If no workflow file is specified, use the default collaborative workflow
+        if not prompt_request.workflow_file:
+            default_workflow_path = os.path.join(root_dir, "workflows", "collaborative_workflow.yml")
+            if os.path.exists(default_workflow_path):
+                prompt_request.workflow_file = "collaborative_workflow.yml"
+                print(f"Using default workflow: {prompt_request.workflow_file}")
+        
         # Create initial job status
         job_status = {
             "id": job_id,
             "status": "pending",
             "created_at": datetime.now().isoformat(),
             "prompt": prompt_request.prompt,
+            "workflow": prompt_request.workflow_file,
             "completed_models": [],
             "results": {}
         }
@@ -1353,7 +1361,7 @@ async def list_workflows():
         # If workflows directory doesn't exist, check if we have a default file to use
         if not os.path.exists(workflows_dir) or not os.listdir(workflows_dir):
             # Check for default workflow in the codebase
-            default_workflow_path = os.path.join(root_dir, "metagpt", "configs", "workflows", "collaborative.yml")
+            default_workflow_path = os.path.join(root_dir, "workflows", "collaborative_workflow.yml")
             if os.path.exists(default_workflow_path):
                 try:
                     with open(default_workflow_path, "r") as f:
