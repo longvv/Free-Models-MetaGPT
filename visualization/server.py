@@ -239,19 +239,47 @@ class LogFileHandler(FileSystemEventHandler):
 # Get the current directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
-logs_dir = os.path.join(root_dir, "logs")
-workspace_dir = os.path.join(root_dir, "workspace")
-images_dir = os.path.join(current_dir, "images")
+
+# Check if we're running in Docker (multiple detection methods)
+in_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_CONTAINER') == 'true' or os.path.exists('/app/server.py')
+
+# Always print path debugging info regardless of environment
+print(f"==DEBUG== Current dir: {current_dir}")
+print(f"==DEBUG== Root dir: {root_dir}")
+print(f"==DEBUG== Docker detection: {in_docker}")
+
+if in_docker:
+    # Docker paths - use container-specific paths
+    logs_dir = "/app/logs"
+    workspace_dir = "/workspace"
+    images_dir = os.path.join("/app", "images")
+    js_dir = os.path.join("/app", "js")
+    css_dir = os.path.join("/app", "css")
+    workflows_dir = "/app/workflows"
+    config_dir = "/app/config"
+    roles_dir = os.path.join(config_dir, "roles")
+    
+    print(f"==DEBUG== Running in Docker container")
+    print(f"==DEBUG== Config dir: {config_dir}")
+    print(f"==DEBUG== Roles dir: {roles_dir}")
+else:
+    # Local development paths
+    logs_dir = os.path.join(root_dir, "logs")
+    workspace_dir = os.path.join(root_dir, "workspace")
+    images_dir = os.path.join(current_dir, "images")
+    js_dir = os.path.join(current_dir, "js")
+    css_dir = os.path.join(current_dir, "css")
+    workflows_dir = os.path.join(root_dir, "workflows")
+    config_dir = os.path.join(root_dir, "config")
+    roles_dir = os.path.join(config_dir, "roles")
+    
+    print(f"==DEBUG== Running in local development")
+    print(f"==DEBUG== Config dir: {config_dir}")
+    print(f"==DEBUG== Roles dir: {roles_dir}")
+
+# Set up log patterns (used for log searching)
 logs_pattern = os.path.join(logs_dir, "*.json")
 workspace_pattern = os.path.join(workspace_dir, "**/*.json")
-js_dir = os.path.join(current_dir, "js")
-css_dir = os.path.join(current_dir, "css")
-workflows_dir = os.path.join(root_dir, "workflows")
-config_dir = os.path.join(root_dir, "config")
-roles_dir = os.path.join(config_dir, "roles")
-
-# Set up log directory
-logs_dir = os.path.join(root_dir, "logs")
 
 # Create directories if they don't exist
 os.makedirs(workflows_dir, exist_ok=True)
@@ -575,7 +603,7 @@ async def get_output():
         
         for log_file in success_logs:
             try:
-                with open(log_file, "r") as f:
+                with open(log_file, 'r') as f:
                     log_data = json.load(f)
                     
                 role = log_data.get("role")
@@ -686,14 +714,24 @@ async def list_files(file_type: str):
         else:  # role
             target_dir = roles_dir
             
+        # Debug information
+        print(f"==DEBUG== list_files for {file_type}")
+        print(f"==DEBUG== target_dir: {target_dir}")
+        print(f"==DEBUG== exists: {os.path.exists(target_dir)}")
+        print(f"==DEBUG== is_dir: {os.path.isdir(target_dir)}")
+        if os.path.exists(target_dir):
+            print(f"==DEBUG== contents: {os.listdir(target_dir)}")
+        
         # List YAML files recursively for roles
         files = []
         if file_type == "role":
             for root, _, filenames in os.walk(target_dir):
+                print(f"==DEBUG== Walking directory: {root}")
                 for filename in filenames:
                     if filename.endswith((".yml", ".yaml")):
                         file_path = os.path.join(root, filename)
                         rel_path = os.path.relpath(file_path, target_dir)
+                        print(f"==DEBUG== Found role file: {rel_path}")
                         files.append({
                             "name": rel_path,
                             "size": os.path.getsize(file_path),
@@ -708,9 +746,13 @@ async def list_files(file_type: str):
                         "size": os.path.getsize(file_path),
                         "modified": os.path.getmtime(file_path)
                     })
+        
+        print(f"==DEBUG== Returning {len(files)} {file_type} files")
         return files
         
     except Exception as e:
+        print(f"==ERROR== Error listing files: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error listing files: {str(e)}")
 
 @app.delete("/api/files/{file_type}/{filename}")

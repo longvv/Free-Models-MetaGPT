@@ -429,22 +429,6 @@ function updateTeamMembersList() {
             `;
         });
         
-        // Add at least 15 items if there are fewer to force scrolling for testing
-        if (roles.size < 15 && window.location.hostname === 'localhost') {
-            for (let i = 0; i < 15; i++) {
-                html += `
-                    <div class="team-member-item">
-                        <div class="team-member-avatar">
-                            <div class="avatar" style="background-color: #${Math.floor(Math.random()*16777215).toString(16)}">
-                                <span>T${i}</span>
-                            </div>
-                        </div>
-                        <div class="team-member-name">Test Role ${i}</div>
-                    </div>
-                `;
-            }
-        }
-        
         teamMemberList.innerHTML = html;
         teamMemberList.setAttribute('data-roles', currentRoles);
         debugLog('Updated team members list with roles:', Array.from(roles));
