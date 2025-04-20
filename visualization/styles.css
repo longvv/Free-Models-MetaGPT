@@ -2140,6 +2140,14 @@ body.dark-theme .message .content pre.code-content {
     text-align: center;
 }
 
+#team-member-list .empty-state {
+    display: block;
+    text-align: center;
+    color: var(--text-muted);
+    padding: 1rem 0;
+    font-style: italic;
+}
+
 /* Generated Avatars */
 .generated-avatar {
     display: flex;

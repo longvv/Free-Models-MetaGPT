@@ -1382,19 +1382,10 @@ async def list_workflows():
                 except Exception as e:
                     print(f"Error parsing default workflow file: {str(e)}")
             
-            # If we still don't have any workflows, add a default one with common roles
+            # If we still don't have any workflows, return an empty list
+            # We don't want to show hardcoded roles anymore
             if not workflow_files:
-                default_roles = [
-                    "product_manager", "architect", "engineer", 
-                    "qa_engineer", "reviewer", "technical_lead",
-                    "domain_expert", "user_advocate", "requirements_analysis"
-                ]
-                workflow_files.append({
-                    "filename": "default.yml",
-                    "name": "Default Workflow",
-                    "description": "Default workflow with standard roles",
-                    "participants": default_roles
-                })
+                return []
         
         # If the workflows directory exists, look for YAML files
         elif os.path.exists(workflows_dir):
@@ -1434,13 +1425,8 @@ async def list_workflows():
         return workflow_files
     except Exception as e:
         print(f"Error in list_workflows: {str(e)}")
-        # Return default fallback even on error
-        return [{
-            "filename": "fallback.yml",
-            "name": "Fallback Workflow",
-            "description": "Fallback workflow with standard roles",
-            "participants": ["product_manager", "architect", "engineer", "qa_engineer"]
-        }]
+        # Return empty list instead of hardcoded fallback
+        return []
 
 @app.websocket("/ws/{job_id}")
 async def websocket_endpoint(websocket: WebSocket, job_id: str):
