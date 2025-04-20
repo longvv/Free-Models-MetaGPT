@@ -3,6 +3,10 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Any, Optional
+import yaml
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CollaborativeConversation:
     """Facilitates conversations between multiple expert models to collaborate on tasks.
@@ -12,29 +16,93 @@ class CollaborativeConversation:
     contributions of other models.
     """
     
-    def __init__(self, config: Dict[str, Any], adapter: Any, memory_system: Any):
+    def __init__(self, config_path=None, adapter: Any = None, memory_system: Any = None, workspace_dir=None):
         """Initialize the collaborative conversation system.
         
         Args:
-            config: Configuration dictionary for the conversation system
+            config_path (str, optional): Path to the config file. If not provided, will use environment variable or default.
             adapter: The model adapter for generating completions
             memory_system: The memory system for storing conversation history
+            workspace_dir (str, optional): Path to the workspace directory. 
         """
-        self.config = config
+        self.workspace_dir = workspace_dir
+        
+        # Use the provided config path or try to get it from environment
+        if config_path:
+            self.config_path = config_path
+        else:
+            # Try to get from environment variable first
+            self.config_path = os.environ.get("METAGPT_CONFIG_PATH")
+            if not self.config_path:
+                # Fall back to default path
+                self.config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.yml")
+        
+        logger.info(f"Initializing CollaborativeConversation with config_path: {self.config_path}")
+        
+        # Load the config
+        self._load_config()
+        
         self.adapter = adapter
         self.memory = memory_system
         self.conversation_history = []
-        self.max_turns = config.get("max_conversation_turns", 10)
-        self.min_turns = config.get("min_conversation_turns", 3)
-        self.consensus_threshold = config.get("consensus_threshold", 0.8)
+        self.max_turns = self.config.get("max_conversation_turns", 10)
+        self.min_turns = self.config.get("min_conversation_turns", 3)
+        self.consensus_threshold = self.config.get("consensus_threshold", 0.8)
         
         # Setup API response logging
-        self.log_api_responses = config.get("log_api_responses", True)
-        self.api_log_dir = config.get("api_log_dir", "logs")
+        self.log_api_responses = self.config.get("log_api_responses", True)
         
-        # Create logs directory if it doesn't exist
-        if self.log_api_responses and not os.path.exists(self.api_log_dir):
-            os.makedirs(self.api_log_dir)
+        # Use API_LOG_DIR environment variable if set, otherwise use config or default
+        api_log_env = os.environ.get("API_LOG_DIR") or self.config.get("api_log_dir", "logs")
+        
+        # Check if API_LOG_DIR contains multiple paths (separated by :)
+        if ":" in api_log_env:
+            self.api_log_dirs = api_log_env.split(":")
+            print(f"Using multiple API log directories: {self.api_log_dirs}")
+        else:
+            self.api_log_dirs = [api_log_env]
+            print(f"Using API log directory: {api_log_env}")
+        
+        # Get workspace directory from environment or config
+        self.workspace_dir = os.environ.get("WORKSPACE_DIR") or self.config.get("workspace_dir")
+        if self.workspace_dir:
+            print(f"Using workspace directory: {self.workspace_dir}")
+            # Ensure workspace logs directory exists
+            self.workspace_logs_dir = os.path.join(self.workspace_dir, "logs")
+            if not os.path.exists(self.workspace_logs_dir):
+                os.makedirs(self.workspace_logs_dir, exist_ok=True)
+                print(f"Created logs directory in workspace: {self.workspace_logs_dir}")
+        
+            # Add workspace logs directory to the list if not already included
+            if self.workspace_logs_dir not in self.api_log_dirs:
+                self.api_log_dirs.append(self.workspace_logs_dir)
+        
+        # Create all log directories if they don't exist
+        if self.log_api_responses:
+            for log_dir in self.api_log_dirs:
+                if not os.path.exists(log_dir):
+                    os.makedirs(log_dir, exist_ok=True)
+                    print(f"Created API log directory: {log_dir}")
+    
+    def _load_config(self):
+        """Load configuration from the config file."""
+        try:
+            with open(self.config_path, 'r') as f:
+                self.config = yaml.safe_load(f)
+                
+            # Extract API key configuration
+            self.api_key = None
+            if "OPENROUTER_CONFIG" in self.config:
+                self.api_key = self.config["OPENROUTER_CONFIG"].get("default_api_key")
+                
+            if self.api_key:
+                logger.info("Successfully loaded API key from config")
+            else:
+                logger.warning("No API key found in config")
+                
+        except Exception as e:
+            logger.error(f"Error loading config: {str(e)}")
+            self.config = {}
     
     async def start_conversation(self, 
                                topic: str, 
@@ -480,7 +548,7 @@ class CollaborativeConversation:
             # Create a timestamp for the log filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
             status = "error" if is_error else "success"
-            filename = f"{self.api_log_dir}/api_response_{model_name.replace('/', '_')}_{role_name}_{status}_{timestamp}.json"
+            base_filename = f"api_response_{model_name.replace('/', '_')}_{role_name}_{status}_{timestamp}.json"
             
             # Add metadata to the logged response
             log_data = {
@@ -491,12 +559,104 @@ class CollaborativeConversation:
                 "response": response
             }
             
-            # Write the response to the log file
-            with open(filename, 'w') as f:
-                json.dump(log_data, f, indent=2)
-                
-            print(f"2025-04-18 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - API response logged to {filename}")
+            # Save logs to all directories
+            saved_locations = []
             
+            for log_dir in self.api_log_dirs:
+                try:
+                    log_path = os.path.join(log_dir, base_filename)
+                    with open(log_path, 'w') as f:
+                        json.dump(log_data, f, indent=2)
+                    saved_locations.append(log_path)
+                    print(f"Saved API response log to: {log_path}")
+                except Exception as e:
+                    print(f"Error saving log to {log_dir}: {str(e)}")
+            
+            # Log where files were saved
+            if saved_locations:
+                log_locations = ', '.join(saved_locations)
+                print(f"2025-04-20 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - INFO - API response logged to: {log_locations}")
+            else:
+                print(f"2025-04-20 {datetime.now().strftime('%H:%M:%S,%f')[:-3]} - ERROR - Failed to log API response to any location")
+        
         except Exception as e:
-            print(f"Error logging API response: {str(e)}")
+            print(f"Error in log_api_response: {str(e)}")
             # Don't let logging errors affect the main process
+
+    def process_prompt(self, prompt, workflow_file, output_file=None):
+        """Process a prompt using the specified workflow.
+        
+        Args:
+            prompt (str): The user prompt to process
+            workflow_file (str): Path to the workflow YAML file
+            output_file (str, optional): Path to save the output JSON
+            
+        Returns:
+            dict: The result of processing the prompt
+        """
+        logger.info(f"Processing prompt: {prompt[:100]}...")
+        logger.info(f"Using workflow file: {workflow_file}")
+        logger.info(f"Using config file: {self.config_path}")
+        
+        if not output_file and self.workspace_dir:
+            output_file = os.path.join(self.workspace_dir, "output.json")
+            
+        try:
+            # Set necessary environment variables
+            if self.api_key:
+                os.environ["OPENROUTER_API_KEY"] = self.api_key
+                logger.info("Set OPENROUTER_API_KEY environment variable from config")
+            
+            # Run the workflow
+            import subprocess
+            import sys
+            
+            # Get the parent directory for run_collaborative.py
+            parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # Prepare the input file if prompt contains newlines
+            input_path = prompt
+            if "\n" in prompt and self.workspace_dir:
+                input_file = os.path.join(self.workspace_dir, "input.txt")
+                with open(input_file, "w") as f:
+                    f.write(prompt)
+                input_path = input_file
+            
+            # Build command to run the workflow
+            cmd = [
+                sys.executable, 
+                os.path.join(parent_dir, "run_collaborative.py"),
+                "--config", self.config_path,
+                "--workflow", workflow_file,
+                "--input", input_path,
+                "--output", output_file
+            ]
+            
+            logger.info(f"Running command: {' '.join(cmd)}")
+            
+            # Run the command and capture output
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=os.environ)
+            
+            # Log the output
+            if result.stdout:
+                logger.info(f"Command stdout:\n{result.stdout[:1000]}...")
+            
+            # Check if output file was created
+            if output_file and os.path.exists(output_file):
+                import json
+                with open(output_file, "r") as f:
+                    return json.load(f)
+            else:
+                return {"status": "success", "message": "Workflow completed but no output file was created"}
+                
+        except subprocess.CalledProcessError as e:
+            error_msg = f"MetaGPT execution failed with code {e.returncode}"
+            if e.stdout:
+                logger.error(f"Command stdout:\n{e.stdout}")
+            if e.stderr:
+                logger.error(f"Command stderr:\n{e.stderr}")
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        except Exception as e:
+            logger.exception(f"Error processing prompt: {str(e)}")
+            raise e

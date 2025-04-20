@@ -61,7 +61,14 @@ def run_visualization_server(port=8088):
 def create_workspace_directories():
     """Create necessary workspace directories if they don't exist."""
     workspace_dir = os.path.join(CURRENT_DIR, "workspace")
+    logs_dir = os.path.join(CURRENT_DIR, "logs")
+    
+    # Create necessary directories
     os.makedirs(workspace_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    print(f"✓ Created workspace directory: {workspace_dir}")
+    print(f"✓ Created logs directory: {logs_dir}")
     
     # Create the sample output.json file if it doesn't exist in either location
     workspace_output = os.path.join(workspace_dir, "output.json")

@@ -267,18 +267,40 @@ class EnhancedOpenRouterAdapter:
         elif 'default_api_key' in config:
             # This might be the OPENROUTER_CONFIG section directly
             openrouter_config = config
-            
+        
         # Print the keys we're using for debugging
         print(f"OpenRouter config keys: {list(openrouter_config.keys()) if openrouter_config else 'None'}")
         
+        # Load API keys with more robust fallback options
         self.default_api_key = api_key or os.getenv("OPENROUTER_API_KEY") or openrouter_config.get('default_api_key')
         self.model_keys = openrouter_config.get('model_keys', {})
         
+        # Try to find API key in the environment first (highest priority)
+        env_api_key = os.getenv("OPENROUTER_API_KEY")
+        if env_api_key:
+            print(f"Using OPENROUTER_API_KEY from environment: {env_api_key[:5]}...")
+            self.default_api_key = env_api_key
+        
+        # If no API key was found anywhere, try to load from Docker secrets
+        if not self.default_api_key and not self.model_keys:
+            print("No API keys found in config or environment. Checking Docker secrets...")
+            docker_secret_path = "/run/secrets/openrouter_api_key"
+            if os.path.exists(docker_secret_path):
+                try:
+                    with open(docker_secret_path, 'r') as f:
+                        secret_key = f.read().strip()
+                        if secret_key:
+                            self.default_api_key = secret_key
+                            print(f"Loaded API key from Docker secret: {secret_key[:5]}...")
+                except Exception as e:
+                    print(f"Error loading Docker secret: {str(e)}")
+        
         # Enhanced debug to see what model keys are being loaded
         if self.model_keys:
+            print(f"Found {len(self.model_keys)} model-specific keys:")
             for model_id, key in self.model_keys.items():
                 key_prefix = key[:5] if key else "None"
-                print(f"Model key for {model_id}: {key_prefix}...")
+                print(f"  - Model key for {model_id}: {key_prefix}...")
 
         # Ensure at least one key source is available
         if not self.default_api_key and not self.model_keys:
@@ -286,8 +308,17 @@ class EnhancedOpenRouterAdapter:
             print("API requests will likely fail without valid API keys.")
         elif self.default_api_key:
             print(f"Using default OpenRouter API key (first 5 chars): {self.default_api_key[:5]}...")
+            # Always add the default key to model_keys for the models used in the config
+            if "MODEL_REGISTRY" in config:
+                model_registry = config.get("MODEL_REGISTRY", {})
+                fallback_models = model_registry.get("fallback_free_models", [])
+                for model in fallback_models:
+                    if model not in self.model_keys:
+                        self.model_keys[model] = self.default_api_key
+                        print(f"Added default API key for model: {model}")
+        
         if self.model_keys:
-            print(f"Loaded {len(self.model_keys)} model-specific API keys.")
+            print(f"Final count: {len(self.model_keys)} model-specific API keys")
         
         rate_limit_config = config.get("RATE_LIMITING", {})
         self.rate_limiter = RateLimiter(
@@ -357,21 +388,27 @@ class EnhancedOpenRouterAdapter:
             # Enhanced API key selection with debugging
             current_api_key = None
             
-            # Try exact match first
-            if current_model in self.model_keys:
-                current_api_key = self.model_keys[current_model]
-                print(f"Found exact API key match for {current_model}")
+            # First, check environment variable (highest priority)
+            env_api_key = os.getenv("OPENROUTER_API_KEY")
+            if env_api_key:
+                current_api_key = env_api_key
+                print(f"Using API key from environment for {current_model}")
             else:
-                # Try without the :free suffix as a fallback
-                base_model = current_model.split(':')[0]
-                if base_model in self.model_keys:
-                    current_api_key = self.model_keys[base_model]
-                    print(f"Found API key match for base model {base_model}")
+                # Try exact match first
+                if current_model in self.model_keys:
+                    current_api_key = self.model_keys[current_model]
+                    print(f"Found exact API key match for {current_model}")
                 else:
-                    # Use default key as last resort
-                    current_api_key = self.default_api_key
-                    if current_api_key:
-                        print(f"Using default API key for {current_model}")
+                    # Try without the :free suffix as a fallback
+                    base_model = current_model.split(':')[0]
+                    if base_model in self.model_keys:
+                        current_api_key = self.model_keys[base_model]
+                        print(f"Found API key match for base model {base_model}")
+                    else:
+                        # Use default key as last resort
+                        current_api_key = self.default_api_key
+                        if current_api_key:
+                            print(f"Using default API key for {current_model}")
 
             if not current_api_key:
                 error_msg = f"No API key found for model '{current_model}' and no default key is set."
@@ -382,6 +419,10 @@ class EnhancedOpenRouterAdapter:
                 await asyncio.sleep(1) # Small delay before trying next model/retry
                 continue # Try next model or retry
 
+            # Print the first few characters of the API key for debugging
+            if current_api_key:
+                print(f"Using API key (first 5 chars): {current_api_key[:5]}...")
+                
             # Set up headers with the selected API key
             headers = {
                 "Authorization": f"Bearer {current_api_key}",
@@ -587,7 +628,7 @@ class EnhancedOpenRouterAdapter:
         """
         url = f"{self.base_url}/models"
         # Use the default API key for this operation
-        headers = {"Authorization": f"Bearer {self.api_key}"}
+        headers = {"Authorization": f"Bearer {self.default_api_key}"}
         
         # Acquire rate limiter permission
         await self.rate_limiter.acquire("get_models")

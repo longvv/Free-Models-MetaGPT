@@ -6,3 +6,7 @@ asyncio>=3.4.3
 # Optional but recommended for vector-based memory system
 sentence-transformers>=2.2.0
 markdown>=3.3.0
+# WebSocket and real-time dependencies
+aiofiles>=0.8.0
+watchdog>=3.0.0
+websockets>=11.0.3

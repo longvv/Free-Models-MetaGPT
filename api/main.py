@@ -66,6 +66,8 @@ def post_messages_to_channel(conversation: Conversation, background_tasks: Backg
     except Exception as e:
         logger.error(f"Failed to save conversation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save conversation: {str(e)}")
+    finally:
+        pass
 
 # API routes
 # No startup event needed for self-hosted chat UI.
@@ -131,96 +133,269 @@ async def process_metagpt_output(background_tasks: BackgroundTasks, project_name
     except Exception as e:
         logger.error(f"Error processing MetaGPT output: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing output: {str(e)}")
+    finally:
+        pass
 
 # Run MetaGPT via run_collaborative.py script
 class PromptRequest(BaseModel):
     prompt: str
     workflow_file: Optional[str] = None
     config_file: Optional[str] = None
+    api_key: Optional[str] = None
 
 @app.post("/api/run_metagpt")
 async def run_metagpt(prompt_request: PromptRequest):
-    # Determine paths
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    workspace_root = os.path.join(parent_dir, "workspace")
-    os.makedirs(workspace_root, exist_ok=True)
-    # Locate run_collaborative script
-    run_script = os.path.join(parent_dir, "run_collaborative.py")
-    if not os.path.exists(run_script):
-        raise HTTPException(status_code=500, detail="MetaGPT script not found")
-    # Prepare run directory
-    timestamp = int(time.time())
-    run_dir = os.path.join(workspace_root, f"workspace_{timestamp}")
-    os.makedirs(run_dir, exist_ok=True)
-    # Write prompt to file
-    input_file = os.path.join(run_dir, "input.txt")
-    with open(input_file, "w") as f:
-        f.write(prompt_request.prompt)
-    # Get workflow file path from request or use default
-    workflows_dir = os.path.join(parent_dir, "workflows")
-    if prompt_request.workflow_file:
-        workflow_path = os.path.join(workflows_dir, prompt_request.workflow_file)
-        logger.info(f"Using requested workflow file: {workflow_path}")
-    else:
-        # Default to metagpt_workflow.yml
-        workflow_path = os.path.join(workflows_dir, "metagpt_workflow.yml")
-        
-        # If default doesn't exist, find any workflow file
-        if not os.path.exists(workflow_path):
-            logger.warning(f"Default workflow file not found at {workflow_path}")
-            yml_files = [f for f in os.listdir(workflows_dir) if f.endswith(('.yml', '.yaml'))]
-            if yml_files:
-                workflow_path = os.path.join(workflows_dir, yml_files[0])
-                logger.info(f"Using fallback workflow file: {workflow_path}")
-            else:
-                raise HTTPException(status_code=500, detail="No workflow file found")
-    
-    # Verify workflow file exists
-    if not os.path.exists(workflow_path):
-        logger.error(f"Workflow file not found: {workflow_path}")
-        raise HTTPException(status_code=404, detail=f"Workflow file not found: {os.path.basename(workflow_path)}")
-    # Run MetaGPT
-    output_file = os.path.join(run_dir, "output.json")
-    
-    # Get config file path from request or use default
-    if prompt_request.config_file:
-        config_path = os.path.join(parent_dir, "config", prompt_request.config_file)
-        logger.info(f"Using requested config file: {config_path}")
-    else:
-        config_path = os.path.join(parent_dir, "config.yml")
-        logger.info(f"Using default config file: {config_path}")
-    
-    # Verify config file exists
-    if not os.path.exists(config_path):
-        logger.error(f"Config file not found: {config_path}")
-        raise HTTPException(status_code=404, detail=f"Config file not found: {os.path.basename(config_path)}")
-    cmd = [sys.executable, run_script, 
-           "--config", config_path,
-           "--workflow", workflow_path,
-           "--input", input_file, 
-           "--output", output_file]
+    """Run MetaGPT with the collaborative workflow."""
+    logger.info(f"Received run_metagpt request with prompt: {prompt_request.prompt[:100]}...")
     try:
-        logger.info(f"Running command: {' '.join(cmd)}")
-        # Capture output for debugging
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        logger.info(f"Command completed successfully")
-        if result.stdout:
-            logger.info(f"Command stdout:\n{result.stdout[:500]}...")
-    except subprocess.CalledProcessError as e:
-        error_msg = f"MetaGPT execution failed with code {e.returncode}"
-        if e.stdout:
-            logger.error(f"Command stdout:\n{e.stdout}")
-        if e.stderr:
-            logger.error(f"Command stderr:\n{e.stderr}")
-        logger.error(error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
-    # Load and return result
-    if not os.path.exists(output_file):
-        raise HTTPException(status_code=500, detail="MetaGPT output.json not generated")
-    with open(output_file, "r") as f:
-        result = json.load(f)
-    return {"status": "success", "result": result}
+        # Get project directory
+        parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        workspace_root = os.path.join(parent_dir, "workspace")
+        os.makedirs(workspace_root, exist_ok=True)
+        
+        # Create logs directory if it doesn't exist
+        logs_dir = os.path.join(parent_dir, "logs")
+        if not os.path.exists(logs_dir):
+            os.makedirs(logs_dir, exist_ok=True)
+            logger.info(f"Created logs directory: {logs_dir}")
+        
+        # Create workspace instance directory with timestamp
+        timestamp = int(time.time())
+        run_dir = os.path.join(workspace_root, f"workspace_{timestamp}")
+        os.makedirs(run_dir, exist_ok=True)
+        
+        # Create workflows directory inside the run_dir
+        workspace_workflows_dir = os.path.join(run_dir, "workflows")
+        if not os.path.exists(workspace_workflows_dir):
+            os.makedirs(workspace_workflows_dir, exist_ok=True)
+            logger.info(f"Created workflows directory in workspace: {workspace_workflows_dir}")
+            
+        # Create logs directory inside the run_dir
+        workspace_logs_dir = os.path.join(run_dir, "logs")
+        if not os.path.exists(workspace_logs_dir):
+            os.makedirs(workspace_logs_dir, exist_ok=True)
+            logger.info(f"Created logs directory in workspace: {workspace_logs_dir}")
+
+        # Set API_LOG_DIR to include both log directories
+        # This is a special format that the CollaborativeConversation class will recognize
+        # to save logs in both locations
+        os.environ["API_LOG_DIR"] = f"{logs_dir}:{workspace_logs_dir}"
+        os.environ["WORKSPACE_DIR"] = run_dir
+        logger.info(f"Set API_LOG_DIR to include both global and workspace logs: {logs_dir} and {workspace_logs_dir}")
+        logger.info(f"Set WORKSPACE_DIR to: {run_dir}")
+        
+        # Create a copy of the config file with the API key explicitly set
+        # This is more reliable than relying on environment variables in Docker
+        config_path = os.path.join(parent_dir, "config.yml")
+        
+        # Use proper YAML parsing/writing instead of string replacement
+        import yaml
+        
+        # Read the original config
+        with open(config_path, 'r') as f:
+            try:
+                config = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                logger.error(f"Error parsing config file: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error parsing config file: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error reading config file: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error reading config file: {str(e)}")
+        
+        # Get API key from request or environment
+        api_key = None
+        if prompt_request.api_key:
+            api_key = prompt_request.api_key
+            logger.info("Using API key from request")
+        else:
+            # Use the environment variable API key as fallback
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if api_key:
+                logger.info("Using API key from environment variable")
+            else:
+                # Try to use the key from config.yml as last resort
+                try:
+                    api_key = config.get("OPENROUTER_CONFIG", {}).get("default_api_key")
+                    logger.info("Using API key from config.yml")
+                except:
+                    logger.warning("No API key available")
+        
+        # Update the config with the new API key if we have one
+        if api_key:
+            # Ensure the OPENROUTER_CONFIG section exists
+            if "OPENROUTER_CONFIG" not in config:
+                config["OPENROUTER_CONFIG"] = {}
+            
+            # Set the default_api_key
+            config["OPENROUTER_CONFIG"]["default_api_key"] = api_key
+            
+            # Also update all model_keys to use the same key
+            if "model_keys" not in config["OPENROUTER_CONFIG"]:
+                config["OPENROUTER_CONFIG"]["model_keys"] = {}
+            
+            # Get all model names from model_registry
+            models = []
+            try:
+                # Extract models from the MODEL_REGISTRY section
+                model_capabilities = config.get("MODEL_REGISTRY", {}).get("model_capabilities", {})
+                for capability_models in model_capabilities.values():
+                    models.extend(capability_models)
+                
+                # Add fallback models
+                fallback_models = config.get("MODEL_REGISTRY", {}).get("fallback_free_models", [])
+                models.extend(fallback_models)
+                
+                # Add default models
+                default_models = config.get("MODEL_REGISTRY", {}).get("default_models_by_task", {}).values()
+                for model_list in default_models:
+                    if isinstance(model_list, list):
+                        models.extend(model_list)
+                
+                # Remove duplicates
+                models = list(set(models))
+            except Exception as e:
+                logger.warning(f"Error extracting models from config: {str(e)}")
+                # Use hardcoded default models as fallback
+                models = [
+                    "deepseek/deepseek-chat-v3-0324:free",
+                    "meta-llama/llama-4-maverick:free",
+                    "google/gemini-2.5-pro-exp-03-25:free"
+                ]
+            
+            # Set the API key for each model
+            for model in models:
+                config["OPENROUTER_CONFIG"]["model_keys"][model] = api_key
+        
+        # Create the modified config file in the workspace
+        modified_config_path = os.path.join(run_dir, "modified_config.yml")
+        with open(modified_config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+        
+        logger.info(f"Created modified config with API key at: {modified_config_path}")
+        
+        # Get workflow file path from request or use default
+        workflows_dir = os.path.join(parent_dir, "workflows")
+        
+        if prompt_request.workflow_file:
+            workflow_rel_path = prompt_request.workflow_file
+            workflow_path = os.path.join(workflows_dir, workflow_rel_path)
+            logger.info(f"Using requested workflow file: {workflow_path}")
+        else:
+            # Default to collaborative_workflow.yml
+            workflow_path = os.path.join(workflows_dir, "collaborative_workflow.yml")
+            logger.info(f"Using default workflow file: {workflow_path}")
+        
+        # Verify workflow file exists
+        if not os.path.exists(workflow_path):
+            logger.error(f"Workflow file not found: {workflow_path}")
+            # Try to list available workflows for debugging
+            try:
+                available_workflows = os.listdir(workflows_dir)
+                logger.info(f"Available workflows: {available_workflows}")
+            except Exception as e:
+                logger.error(f"Error listing workflows directory: {str(e)}")
+            
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Workflow file not found: {os.path.basename(workflow_path)}"
+            )
+            
+        # Copy the workflow file to the workspace workflows directory
+        workflow_filename = os.path.basename(workflow_path)
+        workspace_workflow_path = os.path.join(workspace_workflows_dir, workflow_filename)
+        try:
+            import shutil
+            shutil.copy2(workflow_path, workspace_workflow_path)
+            logger.info(f"Copied workflow file to workspace: {workspace_workflow_path}")
+        except Exception as e:
+            logger.error(f"Error copying workflow file: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error copying workflow file: {str(e)}")
+        
+        # Extract workflow name from the YAML file
+        try:
+            import yaml
+            with open(workspace_workflow_path, 'r') as f:
+                workflow_data = yaml.safe_load(f)
+                
+            if workflow_data and isinstance(workflow_data, dict):
+                # Look for a name field in the workflow file
+                workflow_name = None
+                if "name" in workflow_data:
+                    workflow_name = workflow_data["name"]
+                    logger.info(f"Found name in workflow file: {workflow_name}")
+                
+                # If no name field is found, use the filename without extension
+                if not workflow_name:
+                    workflow_name = os.path.basename(workspace_workflow_path).split('.')[0]
+                    logger.info(f"No name field found in workflow file, using filename: {workflow_name}")
+            else:
+                # If file is empty or invalid, fall back to using the filename
+                workflow_name = os.path.basename(workspace_workflow_path).split('.')[0]
+                logger.warning(f"Invalid or empty workflow file, using filename: {workflow_name}")
+                
+        except Exception as e:
+            # If file can't be read, fall back to using the filename
+            workflow_name = os.path.basename(workspace_workflow_path).split('.')[0]
+            logger.warning(f"Error reading workflow file, using name from filename: {workflow_name} (Error: {str(e)})")
+        
+        # Write prompt to file
+        input_file = os.path.join(run_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write(prompt_request.prompt)
+        
+        # Run MetaGPT
+        output_file = os.path.join(run_dir, "output.json")
+        
+        # Export the modified config path as an environment variable
+        # This ensures the collaborative conversation module will use our config
+        os.environ["METAGPT_CONFIG_PATH"] = modified_config_path
+        logger.info(f"Set METAGPT_CONFIG_PATH to: {modified_config_path}")
+        
+        # Run the workflow directly using subprocess
+        try:
+            import subprocess
+            import sys
+            
+            # Build command for executing run_collaborative.py
+            cmd = [
+                sys.executable, 
+                os.path.join(parent_dir, "run_collaborative.py"),
+                "--config", modified_config_path,
+                "--workflow", workspace_workflow_path,
+                "--input", input_file,
+                "--output", output_file
+            ]
+            
+            logger.info(f"Running command: {' '.join(cmd)}")
+            
+            # Execute the command with environment variables set
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=os.environ)
+            
+            # Log command output
+            if result.stdout:
+                logger.info(f"Command stdout:\n{result.stdout[:1000]}...")
+            
+            # Check if output file was created
+            if not os.path.exists(output_file):
+                raise HTTPException(status_code=500, detail="MetaGPT output.json not generated")
+                
+            # Load and return the result
+            with open(output_file, "r") as f:
+                result = json.load(f)
+            return {"status": "success", "result": result}
+            
+        except subprocess.CalledProcessError as e:
+            error_msg = f"MetaGPT execution failed with code {e.returncode}"
+            logger.error(error_msg)
+            if e.stdout:
+                logger.error(f"Command stdout:\n{e.stdout}")
+            if e.stderr:
+                logger.error(f"Command stderr:\n{e.stderr}")
+            raise HTTPException(status_code=500, detail=error_msg)
+    except Exception as e:
+        logger.exception(f"Unexpected error in run_metagpt: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
 
 @app.get("/health")
 async def health_check():

@@ -64,19 +64,69 @@ async def main():
     if not os.path.isfile(workflow_path):
         # Try as a name in the workflows directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        workflows_dir = os.path.join(script_dir, "workflows")
-        potential_paths = [
-            os.path.join(workflows_dir, f"{workflow_path}.yml"),
-            os.path.join(workflows_dir, f"{workflow_path}.yaml"),
-            os.path.join(workflows_dir, workflow_path)
+        
+        # Define multiple potential workflow directories to search
+        potential_dirs = [
+            os.path.join(script_dir, "workflows"),
+            "/app/workflows",  # Docker container path
+            os.path.join(os.getcwd(), "workflows"),  # Current working directory
+            os.path.join(os.path.dirname(config_path), "workflows"),  # Relative to config
         ]
         
-        for path in potential_paths:
-            if os.path.exists(path):
-                workflow_path = path
+        # Print all workflow directories being searched (for debugging)
+        print(f"Looking for workflow '{workflow_path}' in multiple locations...")
+        
+        found = False
+        for workflows_dir in potential_dirs:
+            if os.path.exists(workflows_dir):
+                print(f"Checking directory: {workflows_dir}")
+                
+                # Try exact matches first
+                exact_matches = [
+                    os.path.join(workflows_dir, f"{workflow_path}.yml"),
+                    os.path.join(workflows_dir, f"{workflow_path}.yaml"),
+                    os.path.join(workflows_dir, workflow_path)
+                ]
+                
+                for path in exact_matches:
+                    if os.path.exists(path):
+                        workflow_path = path
+                        print(f"Found exact match: {workflow_path}")
+                        found = True
+                        break
+                
+                # If not found, try pattern matching for files containing the workflow name
+                if not found:
+                    try:
+                        for filename in os.listdir(workflows_dir):
+                            if filename.endswith(('.yml', '.yaml')) and workflow_path in filename:
+                                potential_path = os.path.join(workflows_dir, filename)
+                                print(f"Found pattern match: {potential_path}")
+                                
+                                # Verify this file has the right workflow name inside
+                                try:
+                                    with open(potential_path, 'r') as f:
+                                        content = f.read()
+                                        if f"name: {workflow_path}" in content:
+                                            workflow_path = potential_path
+                                            print(f"Confirmed file contains workflow '{workflow_path}': {potential_path}")
+                                            found = True
+                                            break
+                                except Exception as e:
+                                    print(f"Error checking file content: {str(e)}")
+                    except Exception as e:
+                        print(f"Error listing directory {workflows_dir}: {str(e)}")
+            
+            if found:
                 break
+        
+        if not found:
+            print(f"WARNING: Could not find workflow file for '{workflow_path}' in any location.")
     
-    print(f"Using workflow file: {workflow_path}")
+    if os.path.exists(workflow_path):
+        print(f"Using workflow file: {workflow_path}")
+    else:
+        print(f"Using workflow name (file not directly found): {workflow_path}")
     
     # Initialize the collaborative task orchestrator
     orchestrator = CollaborativeTaskOrchestrator(config_path)

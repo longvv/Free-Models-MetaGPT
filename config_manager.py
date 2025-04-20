@@ -362,33 +362,52 @@ class DynamicConfigManager:
         if not self.loaded:
             raise RuntimeError("Configuration not loaded. Call initialize() first.")
             
-        workflow_dir = self.config_path.parent / "workflows"
-        workflow_file = workflow_dir / f"{workflow_name}.yml"
+        # Define multiple potential workflow directories to search
+        possible_workflow_dirs = [
+            self.config_path.parent / "workflows",  # /path/to/config.yml/../workflows
+            Path("/app/workflows"),                 # Docker container path
+            Path(os.getcwd()) / "workflows",        # Current working directory
+            Path.home() / "workflows"               # User's home directory
+        ]
         
-        if not workflow_file.exists():
-            print(f"Warning: Workflow file not found: {workflow_file}")
-            # Attempt to load from WORKFLOWS section in main config as a fallback
-            workflows_section = self.config.get("WORKFLOWS")
-            if workflows_section and workflow_name in workflows_section:
-                print(f"Loading workflow '{workflow_name}' from main config.")
-                return workflows_section.get(workflow_name)
-            return None
-            
-        try:
-            with open(workflow_file, 'r') as f:
-                workflow_config = yaml.safe_load(f)
-                # Assuming the stages are the top-level list in the YAML
-                if isinstance(workflow_config, list):
-                    return workflow_config
-                # Or if they are under a specific key like 'stages'
-                elif isinstance(workflow_config, dict) and 'stages' in workflow_config:
-                     return workflow_config.get('stages')
-                else:
-                    print(f"Warning: Unexpected format in workflow file: {workflow_file}")
-                    return None
-        except Exception as e:
-            print(f"Error loading workflow file {workflow_file}: {str(e)}")
-            return None
+        # Print all workflow directories being searched (for debugging)
+        print(f"Searching for workflow '{workflow_name}' in:")
+        for wf_dir in possible_workflow_dirs:
+            print(f"  - {wf_dir}")
+        
+        # Try multiple file extensions
+        extensions = ['.yml', '.yaml', '']
+        
+        # Check all possible paths
+        for workflow_dir in possible_workflow_dirs:
+            for ext in extensions:
+                workflow_file = workflow_dir / f"{workflow_name}{ext}"
+                try:
+                    if workflow_file.exists():
+                        print(f"Found workflow file: {workflow_file}")
+                        with open(workflow_file, 'r') as f:
+                            workflow_config = yaml.safe_load(f)
+                            # Assuming the stages are the top-level list in the YAML
+                            if isinstance(workflow_config, list):
+                                return workflow_config
+                            # Or if they are under a specific key like 'stages'
+                            elif isinstance(workflow_config, dict) and 'stages' in workflow_config:
+                                return workflow_config.get('stages')
+                            else:
+                                print(f"Warning: Unexpected format in workflow file: {workflow_file}")
+                except Exception as e:
+                    print(f"Error attempting to load workflow file {workflow_file}: {str(e)}")
+        
+        # Final fallback - look directly in the config file
+        print(f"Workflow file not found in any location. Checking main config for inline workflow definition.")
+        workflows_section = self.config.get("WORKFLOWS")
+        if workflows_section and workflow_name in workflows_section:
+            print(f"Loading workflow '{workflow_name}' from main config.")
+            return workflows_section.get(workflow_name)
+                    
+        # If we got here, we couldn't find the workflow
+        print(f"ERROR: Could not find workflow '{workflow_name}' in any location.")
+        return None
 
 # Example usage (optional, for testing)
 async def main():

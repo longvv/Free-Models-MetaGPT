@@ -5,3 +5,6 @@ pydantic
 python-multipart
 requests
 pyyaml
+aiofiles
+watchdog
+websockets
