@@ -399,31 +399,24 @@ function updateTeamMembersList() {
     // If no workflow is available, hide the team members list
     if (!hasWorkflow) {
         teamMemberList.innerHTML = '<div class="empty-state">No workflow loaded</div>';
-        teamMemberList.setAttribute('data-roles', '');
-        debugLog('No workflow available, hiding team members list');
         return;
     }
     
-    // Get participants from workflow data
+    // Get team participants
+    const currentRoles = getTeamParticipants().join(',');
+    if (teamMemberList.getAttribute('data-roles') === currentRoles) {
+        // No change in roles, skip update
+        return;
+    }
+    
+    // Get current active roles from all messages
     const roles = new Set(getTeamParticipants());
     
-    // Also check for roles from actual messages
-    document.querySelectorAll('.message').forEach(msg => {
-        const roleClasses = Array.from(msg.classList).filter(cls => 
-            !['message', 'error', 'reconnecting', 'new-message-highlight', 'system'].includes(cls)
-        );
-        
-        if (roleClasses.length > 0) {
-            roleClasses.forEach(role => roles.add(role));
-        }
-    });
-    
-    // Check if team members list has changed
-    const currentRoles = Array.from(roles).sort().join(',');
-    
-    // Only update if roles have changed or the list is empty
-    if (teamMemberList.getAttribute('data-roles') !== currentRoles || teamMemberList.innerHTML.trim() === '') {
-        // Create the team members list
+    // No roles found, show empty state
+    if (roles.size === 0) {
+        teamMemberList.innerHTML = '<div class="empty-state">No team members found</div>';
+    } else {
+        // Build team member list
         let html = '';
         Array.from(roles).forEach(role => {
             html += `
@@ -436,9 +429,38 @@ function updateTeamMembersList() {
             `;
         });
         
+        // Add at least 15 items if there are fewer to force scrolling for testing
+        if (roles.size < 15 && window.location.hostname === 'localhost') {
+            for (let i = 0; i < 15; i++) {
+                html += `
+                    <div class="team-member-item">
+                        <div class="team-member-avatar">
+                            <div class="avatar" style="background-color: #${Math.floor(Math.random()*16777215).toString(16)}">
+                                <span>T${i}</span>
+                            </div>
+                        </div>
+                        <div class="team-member-name">Test Role ${i}</div>
+                    </div>
+                `;
+            }
+        }
+        
         teamMemberList.innerHTML = html;
         teamMemberList.setAttribute('data-roles', currentRoles);
         debugLog('Updated team members list with roles:', Array.from(roles));
+    }
+    
+    // Force a repaint to ensure scrollbar appears correctly
+    const scrollContainer = document.querySelector('.team-member-list-scroll');
+    if (scrollContainer) {
+        // Force scrollbar to appear if content exceeds container
+        setTimeout(() => {
+            if (teamMemberList.offsetHeight > scrollContainer.offsetHeight) {
+                scrollContainer.style.overflowY = 'scroll';
+            } else {
+                scrollContainer.style.overflowY = 'auto';
+            }
+        }, 50);
     }
 }
 

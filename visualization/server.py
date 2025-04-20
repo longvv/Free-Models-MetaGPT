@@ -248,7 +248,7 @@ js_dir = os.path.join(current_dir, "js")
 css_dir = os.path.join(current_dir, "css")
 workflows_dir = os.path.join(root_dir, "workflows")
 config_dir = os.path.join(root_dir, "config")
-roles_dir = os.path.join(root_dir, "roles")
+roles_dir = os.path.join(config_dir, "roles")
 
 # Set up log directory
 logs_dir = os.path.join(root_dir, "logs")
@@ -686,17 +686,28 @@ async def list_files(file_type: str):
         else:  # role
             target_dir = roles_dir
             
-        # List YAML files
+        # List YAML files recursively for roles
         files = []
-        for filename in os.listdir(target_dir):
-            if filename.endswith((".yml", ".yaml")):
-                file_path = os.path.join(target_dir, filename)
-                files.append({
-                    "name": filename,
-                    "size": os.path.getsize(file_path),
-                    "modified": os.path.getmtime(file_path)
-                })
-                
+        if file_type == "role":
+            for root, _, filenames in os.walk(target_dir):
+                for filename in filenames:
+                    if filename.endswith((".yml", ".yaml")):
+                        file_path = os.path.join(root, filename)
+                        rel_path = os.path.relpath(file_path, target_dir)
+                        files.append({
+                            "name": rel_path,
+                            "size": os.path.getsize(file_path),
+                            "modified": os.path.getmtime(file_path)
+                        })
+        else:
+            for filename in os.listdir(target_dir):
+                if filename.endswith((".yml", ".yaml")):
+                    file_path = os.path.join(target_dir, filename)
+                    files.append({
+                        "name": filename,
+                        "size": os.path.getsize(file_path),
+                        "modified": os.path.getmtime(file_path)
+                    })
         return files
         
     except Exception as e:

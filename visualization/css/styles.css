@@ -25,22 +25,34 @@ body {
   line-height: 1.6;
 }
 
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .app-container {
-  display: flex;
-  height: 100vh;
+  height: 100vh !important; /* Force full viewport height */
+  display: flex !important;
+  overflow: hidden !important;
 }
 
 .sidebar {
   width: 250px;
+  min-width: 250px;
   background-color: var(--dark-grey);
   color: var(--white);
   padding: 20px;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .app-title {
   margin-bottom: 30px;
+  flex-shrink: 0;
 }
 
 .app-title h1 {
@@ -55,9 +67,11 @@ body {
 }
 
 .team-members {
-  flex-grow: 1;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  overflow: hidden; /* Prevent team-members from scrolling */
+  min-height: 0; /* Needed for Firefox */
 }
 
 .team-members h2 {
@@ -65,14 +79,50 @@ body {
   margin-bottom: 15px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.team-member-list-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto; /* This container should scroll */
+  max-height: calc(100% - 50px); /* Ensure it doesn't overflow its parent */
+  display: block; /* Ensure block display */
+  position: relative; /* Create a positioning context */
+}
+
+.team-member-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.team-member-list-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.team-member-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.team-member-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 #team-member-list {
   list-style-type: none;
-  overflow-y: auto;
-  max-height: calc(100vh - 200px);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  width: 100%;
+  display: block; /* Force block display */
+}
+
+.team-member-item {
+  display: block; /* Force block display */
+  width: 100%;
+  margin-bottom: 8px; /* Add spacing between items */
+}
+
+.team-member, 
+.team-member-item {
+  flex-shrink: 0;
 }
 
 .team-member {
@@ -728,13 +778,10 @@ label[for="file-input"]:hover {
   }
   
   .sidebar {
-    width: 100%;
-    height: auto;
-    padding: 10px;
-  }
-  
-  .team-members {
-    margin-bottom: 20px;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    overflow: hidden !important; /* Prevent sidebar itself from scrolling */
   }
   
   .chat-messages {
