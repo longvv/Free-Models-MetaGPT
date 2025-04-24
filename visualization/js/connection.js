@@ -12,6 +12,172 @@ let reconnectInterval = null;
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
 
+// Auto-connect when script is loaded - ensures connection even if API checks fail
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait a short time to let the UI initialize first
+    setTimeout(function() {
+        // If no connection has been established yet, auto-connect
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            debugLog("No active connection detected, attempting auto-connect");
+            autoConnect();
+        }
+    }, 2000); // Wait 2 seconds after page load
+});
+
+/**
+ * Auto-connect to a new WebSocket session with a generated ID
+ */
+function autoConnect() {
+    // Generate a unique session ID
+    const timestamp = new Date().toISOString().replace(/[-:.]/g, '').substring(0, 14);
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const newSessionId = `auto_session_${timestamp}_${randomSuffix}`;
+    
+    debugLog(`Auto-connecting with generated session ID: ${newSessionId}`);
+    
+    // Update the input field
+    const inputField = document.getElementById('input-field');
+    if (inputField) {
+        inputField.value = newSessionId;
+    }
+    
+    // Connect to this session
+    connect(newSessionId);
+    
+    // Add a status message
+    appendResult({
+        role: 'system',
+        content: `🔄 Automatically connected to new session: ${newSessionId}`
+    });
+}
+
+/**
+ * Check if WebSocket is currently connected
+ * @returns {boolean} - Whether the WebSocket is connected
+ */
+function isConnected() {
+    return socket && socket.readyState === WebSocket.OPEN;
+}
+
+/**
+ * Connect to a job using the job ID
+ * This is a wrapper function for connectToJobWebSocket
+ * @param {string} jobId - The job ID to connect to
+ */
+function connect(jobId) {
+    debugLog(`Connection attempt initiated for job: ${jobId}`);
+    
+    // Display connecting status immediately
+    updateConnectionStatus('Connecting...');
+    
+    // Add a message about connection attempt
+    appendResult({
+        role: 'system',
+        content: `Connecting to MetaGPT session ${jobId}...`
+    });
+    
+    // Call the actual connection function
+    connectToJobWebSocket(jobId);
+}
+
+/**
+ * Send a message to the connected WebSocket
+ * @param {string} message - The message to send
+ */
+function sendMessage(message) {
+    if (!isConnected()) {
+        debugLog("Cannot send message - WebSocket not connected");
+        appendResult({
+            role: 'system',
+            content: 'Not connected to a MetaGPT session. Please enter a job ID to connect.'
+        });
+        return;
+    }
+    
+    try {
+        // Log the outgoing message
+        debugLog(`Sending message: ${message}`);
+        
+        // Send as JSON
+        const messageObj = {
+            role: 'user',
+            content: message
+        };
+        
+        // Send to WebSocket
+        socket.send(JSON.stringify(messageObj));
+        
+        // Add message to UI
+        appendResult(messageObj);
+    } catch (error) {
+        debugLog("Error sending message:", error);
+        appendResult({
+            role: 'system',
+            content: `Failed to send message: ${error.message}`
+        });
+    }
+}
+
+/**
+ * Debug function to log WebSocket state
+ */
+function logSocketState() {
+    if (!socket) {
+        debugLog("WebSocket status: No socket created");
+        return;
+    }
+    
+    let stateDesc = "Unknown";
+    switch(socket.readyState) {
+        case WebSocket.CONNECTING:
+            stateDesc = "CONNECTING";
+            break;
+        case WebSocket.OPEN:
+            stateDesc = "OPEN";
+            break;
+        case WebSocket.CLOSING:
+            stateDesc = "CLOSING";
+            break;
+        case WebSocket.CLOSED:
+            stateDesc = "CLOSED";
+            break;
+    }
+    
+    debugLog(`WebSocket status: ${stateDesc} (${socket.readyState})`);
+    debugLog(`WebSocket URL: ${socket.url}`);
+}
+
+/**
+ * Debug function to log the current connection state
+ */
+function logConnectionStatus() {
+    if (!socket) {
+        debugLog("WebSocket status: No socket created");
+        return;
+    }
+    
+    let stateDesc = "Unknown";
+    switch(socket.readyState) {
+        case WebSocket.CONNECTING:
+            stateDesc = "CONNECTING";
+            break;
+        case WebSocket.OPEN:
+            stateDesc = "OPEN";
+            break;
+        case WebSocket.CLOSING:
+            stateDesc = "CLOSING";
+            break;
+        case WebSocket.CLOSED:
+            stateDesc = "CLOSED";
+            break;
+    }
+    
+    debugLog(`WebSocket status: ${stateDesc} (${socket.readyState})`);
+    if (socket.url) {
+        debugLog(`WebSocket URL: ${socket.url}`);
+    }
+}
+
 /**
  * Connect to WebSocket for a specific job ID
  * @param {string} jobId - The job ID to connect to
@@ -130,6 +296,45 @@ function connectToJobWebSocket(jobId) {
 }
 
 /**
+ * Function to update connection status display
+ * @param {string} status - The connection status
+ */
+function updateConnectionStatus(status) {
+    const connectionStatus = document.getElementById('connection-status');
+    if (!connectionStatus) return;
+    
+    // Remove all existing status classes
+    connectionStatus.classList.remove('connection-connected', 'connection-closed', 'connection-connecting', 'connection-error');
+    
+    // Add appropriate class and set text
+    let iconClass = 'fa-plug';
+    switch(status) {
+        case 'Connected':
+            connectionStatus.classList.add('connection-connected');
+            iconClass = 'fa-plug-circle-check';
+            break;
+        case 'Disconnected':
+            connectionStatus.classList.add('connection-closed');
+            iconClass = 'fa-plug-circle-xmark';
+            break;
+        case 'Connecting...':
+            connectionStatus.classList.add('connection-connecting');
+            iconClass = 'fa-plug-circle-bolt';
+            break;
+        case 'Connection Error':
+            connectionStatus.classList.add('connection-error');
+            iconClass = 'fa-plug-circle-exclamation';
+            break;
+    }
+    
+    // Update icon and text
+    connectionStatus.innerHTML = `<i class="fas ${iconClass}"></i>${status}`;
+    
+    debugLog(`Connection status updated: ${status}`);
+    logConnectionStatus();
+}
+
+/**
  * Attempt to reconnect to WebSocket
  * @param {string} jobId - The job ID to reconnect to
  */
@@ -165,43 +370,6 @@ function attemptReconnect(jobId) {
         
         connectToJobWebSocket(jobId);
     }, userSettings.reconnectInterval);
-}
-
-/**
- * Update connection status in the UI
- * @param {string} status - The connection status
- */
-function updateConnectionStatus(status) {
-    const statusElement = document.getElementById('connection-status');
-    if (!statusElement) return;
-    
-    statusElement.className = 'connection-status';
-    
-    switch(status) {
-        case 'Connected':
-            statusElement.innerHTML = '<i class="fas fa-plug"></i>Connected';
-            statusElement.classList.add('connection-open');
-            break;
-        case 'Connecting...':
-            statusElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>Connecting...';
-            statusElement.classList.add('connection-connecting');
-            break;
-        case 'Disconnected':
-            statusElement.innerHTML = '<i class="fas fa-plug-circle-xmark"></i>Disconnected';
-            statusElement.classList.add('connection-closed');
-            break;
-        case 'Connection Error':
-            statusElement.innerHTML = '<i class="fas fa-triangle-exclamation"></i>Connection Error';
-            statusElement.classList.add('connection-closed');
-            break;
-        default:
-            statusElement.innerHTML = '<i class="fas fa-plug"></i>' + status;
-            if (status.includes('Reconnecting')) {
-                statusElement.classList.add('connection-connecting');
-            } else {
-                statusElement.classList.add('connection-closed');
-            }
-    }
 }
 
 /**
@@ -245,7 +413,7 @@ function submitPrompt() {
     `;
     
     // Connect to the WebSocket for this job
-    connectToJobWebSocket(jobId);
+    connect(jobId);
     
     // Update URL without reloading the page
     const url = new URL(window.location);

@@ -48,68 +48,46 @@ function setupEventListeners() {
         clearMessagesButton.addEventListener('click', clearMessages);
     }
     
-    // Debug console button - simple toggle
+    // Debug console button
     const debugButton = document.getElementById('debug-console-button');
-    const debugPanel = document.getElementById('debug-panel');
-    
-    if (debugButton && debugPanel) {
-        debugButton.addEventListener('click', function() {
-            debugPanel.classList.toggle('active');
-            this.classList.toggle('active');
-        });
+    if (debugButton) {
+        debugButton.addEventListener('click', toggleDebugConsole);
     }
     
     // Close debug button
     const closeDebugBtn = document.getElementById('close-debug');
-    if (closeDebugBtn && debugPanel) {
+    if (closeDebugBtn) {
         closeDebugBtn.addEventListener('click', function() {
-            debugPanel.classList.remove('active');
-            if (debugButton) debugButton.classList.remove('active');
+            const debugPanel = document.getElementById('debug-panel');
+            if (debugPanel) {
+                debugPanel.classList.remove('active');
+                
+                // Also update button state
+                const debugButton = document.getElementById('debug-console-button');
+                if (debugButton) {
+                    debugButton.classList.remove('active');
+                }
+            }
         });
     }
     
     // ESC key to close modals and panels
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            // Close debug panel
+            // Close debug panel if open
+            const debugPanel = document.getElementById('debug-panel');
             if (debugPanel && debugPanel.classList.contains('active')) {
                 debugPanel.classList.remove('active');
+                const debugButton = document.getElementById('debug-console-button');
                 if (debugButton) debugButton.classList.remove('active');
-            }
-            
-            // Close config modal
-            closeConfigModal();
-        }
-    });
-    
-    // Connection form submit
-    const connectionForm = document.getElementById('connection-form');
-    if (connectionForm) {
-        connectionForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const jobId = document.getElementById('job-id').value.trim();
-            if (!jobId) {
-                showToast('Please enter a job ID', 'error');
                 return;
             }
             
-            connectToJob(jobId);
-        });
-    }
-    
-    // View logs button
-    const viewLogsButton = document.getElementById('view-logs-button');
-    if (viewLogsButton) {
-        viewLogsButton.addEventListener('click', fetchAndDisplayLogs);
-    }
-    
-    // Panel close buttons
-    const closeButtons = document.querySelectorAll('.close-panel');
-    closeButtons.forEach(button => {
-        button.addEventListener('click', handleClosePanelClick);
+            // Close config modal if open
+            closeConfigModal();
+        }
     });
-    
+
     // Pass initial log message to debug console
     debugLog('Visualization UI initialized - Working with containerized MetaGPT API');
     debugLog('Connected to workspace directory at /workspace');
@@ -122,9 +100,15 @@ function setupEventListeners() {
 function openConfigModal() {
     const modal = document.getElementById('config-modal');
     if (modal) {
+        // Directly add the active class to show the modal
         modal.classList.add('active');
+        
+        // Also add modal-open class to body to prevent scrolling
         document.body.classList.add('modal-open');
-        updateRecentJobsList();
+        
+        console.log('Config modal opened');
+    } else {
+        console.error('Config modal element not found');
     }
 }
 
@@ -134,8 +118,13 @@ function openConfigModal() {
 function closeConfigModal() {
     const modal = document.getElementById('config-modal');
     if (modal) {
+        // Remove the active class to hide the modal
         modal.classList.remove('active');
+        
+        // Also remove modal-open class from body
         document.body.classList.remove('modal-open');
+        
+        console.log('Config modal closed');
     }
 }
 
@@ -143,20 +132,26 @@ function closeConfigModal() {
  * Function to toggle the debug console
  */
 function toggleDebugConsole() {
-    const debugConsole = document.getElementById('debug-console');
-    if (debugConsole) {
-        debugLog('Toggling debug console');
-        debugConsole.classList.toggle('visible');
-        
-        // Also update button state
-        const debugButton = document.getElementById('debug-console-button');
-        if (debugButton) {
-            if (debugConsole.classList.contains('visible')) {
-                debugButton.classList.add('active');
-            } else {
-                debugButton.classList.remove('active');
-            }
-        }
+    const debugPanel = document.getElementById('debug-panel');
+    const debugButton = document.getElementById('debug-console-button');
+    
+    if (!debugPanel) {
+        console.error('Debug panel element not found');
+        return;
+    }
+    
+    // Toggle the active class to show/hide the panel
+    if (debugPanel.classList.contains('active')) {
+        debugPanel.classList.remove('active');
+        console.log('Debug panel hidden');
+    } else {
+        debugPanel.classList.add('active');
+        console.log('Debug panel shown');
+    }
+    
+    // Update button state
+    if (debugButton) {
+        debugButton.classList.toggle('active');
     }
 }
 

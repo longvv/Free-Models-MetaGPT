@@ -34,22 +34,41 @@ app = FastAPI(title="MetaGPT Chat Visualization")
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
         print("==DEBUG== ConnectionManager initialized")
-        
-    async def connect(self, websocket: WebSocket, job_id: str):
-        print(f"==DEBUG== ConnectionManager.connect called for job_id: {job_id}")
-        await websocket.accept()
+        self.active_connections = {}  # job_id -> WebSocket mapping
+    
+    def connect(self, job_id: str, websocket: WebSocket):
+        """Connect a client to a job"""
+        print(f"==DEBUG== Adding WebSocket connection for job {job_id}")
         self.active_connections[job_id] = websocket
-        print(f"==DEBUG== WebSocket accepted and stored for job_id: {job_id}")
         print(f"==DEBUG== Active connections: {list(self.active_connections.keys())}")
-        
+    
     def disconnect(self, job_id: str):
+        """Disconnect a client from a job"""
+        print(f"==DEBUG== Removing WebSocket connection for job {job_id}")
         if job_id in self.active_connections:
-            print(f"==DEBUG== Removing connection for job_id: {job_id}")
-            self.active_connections.pop(job_id)
-            print(f"==DEBUG== Remaining connections: {list(self.active_connections.keys())}")
-        
+            del self.active_connections[job_id]
+            print(f"==DEBUG== Connection removed for job {job_id}")
+        else:
+            print(f"==DEBUG== No connection found for job {job_id}")
+        print(f"==DEBUG== Active connections: {list(self.active_connections.keys())}")
+    
+    async def send_message(self, job_id: str, message: dict):
+        """Send a message to a client"""
+        if job_id in self.active_connections:
+            websocket = self.active_connections[job_id]
+            try:
+                await websocket.send_json(message)
+                return True
+            except Exception as e:
+                print(f"==ERROR== Error sending message to job {job_id}: {str(e)}")
+                # If we get an error, the connection might be closed
+                self.disconnect(job_id)
+                return False
+        else:
+            print(f"==DEBUG== Cannot send message - no connection for job {job_id}")
+            return False
+
     async def send_update(self, job_id: str, message: Dict):
         print(f"==DEBUG== send_update called for job_id: {job_id}")
         print(f"==DEBUG== Update status: {message.get('status')}")
@@ -458,104 +477,280 @@ async def process_metagpt_request(job_id: str, prompt_request: PromptRequest, jo
             error_details = "; ".join(error_messages)
             raise Exception(f"Failed to connect to any API endpoint: {error_details}")
         
-        # Process the API response
-        api_result = response.json()
+        # Successfully started the job in the API container
+        try:
+            result = response.json()
+            print(f"MetaGPT job started successfully: {result}")
+        except Exception as e:
+            error_message = f"Failed to parse API response: {str(e)}, Raw response: {response.text[:100]}"
+            print(error_message)
+            
+            # Send error to WebSocket client
+            await manager.send_update(job_id, {
+                "status": "error",
+                "error": error_message
+            })
+            return
         
-        # Update job status with results
-        with open(job_file, "r") as f:
-            job_status = json.load(f)
-        
-        job_status["status"] = "completed"
-        job_status["completed_at"] = datetime.now().isoformat()
-        
-        # Add results from the API response if they exist
-        if "result" in api_result:
-            job_status["results"] = api_result["result"]
-        
-        # If not, try to build results from logs
-        else:
-            job_status["results"] = build_results_from_logs(job_id)
-        
-        with open(job_file, "w") as f:
-            json.dump(job_status, f, indent=2)
-        
-        # Notify clients of completion
+        # Notify the client that the job has started
         await manager.send_update(job_id, {
             "type": "status_update",
-            "status": "completed",
-            "message": "Job completed successfully",
-            "results": job_status["results"]
+            "status": "started",
+            "message": "Job submitted to MetaGPT, workspace created. Starting processing...",
+            "job_details": result
         })
         
-    except Exception as e:
-        # Update job status to failed
+        # Set up log monitoring for this job
+        workspace_monitor_task = None
         try:
-            with open(job_file, "r") as f:
-                job_status = json.load(f)
+            # Extract workspace ID from response or generate based on job ID
+            workspace_id = result.get('workspace_id', f"workspace_{job_id}")
             
-            job_status["status"] = "failed"
-            job_status["error"] = str(e)
-            job_status["failed_at"] = datetime.now().isoformat()
-            
-            with open(job_file, "w") as f:
-                json.dump(job_status, f, indent=2)
-            
-            # Notify clients of failure
-            await manager.send_update(job_id, {
-                "type": "status_update",
-                "status": "failed",
-                "message": f"Job failed: {str(e)}"
-            })
-        except Exception as inner_e:
-            print(f"Error updating job status: {str(inner_e)}")
-    
-    finally:
-        # Stop the observer
-        if observer:
-            observer.stop()
-            observer.join()
-
-# Function to build results from log files
-def build_results_from_logs(job_id: str) -> Dict[str, Any]:
-    results = {}
-    
-    # Get all successful API response logs for this job
-    success_logs = glob.glob(os.path.join(logs_dir, f"*{job_id}*success*.json"))
-    
-    for log_file in success_logs:
-        try:
-            with open(log_file, 'r') as f:
-                log_data = json.load(f)
-            
-            role = log_data.get("role")
-            response_data = log_data.get("response", {})
-            choices = response_data.get("choices", [])
-            
-            if role and choices and len(choices) > 0:
-                message = choices[0].get("message", {})
-                content = message.get("content", "")
-                
-                if content:
-                    # Map the role to an output key based on reverse of OUTPUT_TO_ROLE_MAP
-                    # Using common role to output key mappings
-                    role_to_output = {
-                        "requirements_analysis": "requirements_analysis",
-                        "domain_expert": "domain_expert_review",
-                        "user_advocate": "user_experience_review",
-                        "technical_lead": "technical_review",
-                        "architect": "architecture_design",
-                        "developer": "implementation",
-                        "qa_engineer": "testing_plan",
-                        "security_expert": "security_review",
-                        "code_reviewer": "code_review"
-                    }
-                    
-                    output_key = role_to_output.get(role, role)
-                    results[output_key] = content
+            # Set up paths to monitor for log files
+            print(f"Setting up log monitoring for job {job_id}")
+            # Start a background task to monitor both logs directory and workspace directory
+            workspace_monitor_task = asyncio.create_task(monitor_workspace_files(job_id, workspace_id))
+            print(f"Log monitoring started for job {job_id}")
         except Exception as e:
-            print(f"Error processing log file {log_file}: {str(e)}")
+            print(f"Error setting up log monitoring: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        # The job is running in the API container, so we just periodically check and wait
+        # for a reasonable time before telling the client it's running in the background
+        wait_count = 0
+        while wait_count < 20 and job_id in manager.active_connections:
+            # Send periodic updates to keep the client informed
+            if wait_count % 5 == 0 and job_id in manager.active_connections:
+                await manager.send_update(job_id, {
+                    "status": "update",
+                    "message": f"MetaGPT processing... (waited {wait_count*2} seconds)"
+                })
+            
+            # Sleep for 2 seconds
+            await asyncio.sleep(2)
+            wait_count += 1
+        
+        # If we still have a connection after waiting, send a final update
+        if job_id in manager.active_connections:
+            await manager.send_update(job_id, {
+                "status": "update",
+                "message": "MetaGPT job is running in the background. Results will update automatically when available."
+            })
+            
+        # Wait for the monitor task to complete (this will run indefinitely until the WebSocket disconnects)
+        if workspace_monitor_task:
+            try:
+                # We don't actually wait for it to complete, as it will run until the WebSocket disconnects
+                # This is just to keep a reference to the task so it doesn't get garbage collected
+                print(f"Workspace monitoring task is running for job {job_id}")
+            except Exception as e:
+                print(f"Error in workspace monitoring task: {str(e)}")
+            
+    except Exception as e:
+        error_message = f"Error in background job: {str(e)}"
+        print(error_message)
+        import traceback
+        traceback.print_exc()
+        
+        # Send error to WebSocket if it's connected
+        if job_id in manager.active_connections:
+            await manager.send_update(job_id, {
+                "status": "error",
+                "error": error_message
+            })
+
+async def monitor_workspace_files(job_id, workspace_id):
+    """Monitor workspace files for changes and send updates via WebSocket."""
+    print(f"Starting workspace file monitoring for job {job_id}, workspace {workspace_id}")
     
-    return results
+    # Define the paths to monitor
+    logs_dir = "/logs"  # Main logs directory
+    workspace_dir = f"/workspace/{workspace_id}"  # Job-specific workspace
+    workspace_logs_dir = f"{workspace_dir}/logs"  # Job-specific logs directory
+    
+    print(f"Monitoring directories for job {job_id}:")
+    print(f"  - Main logs: {logs_dir}")
+    print(f"  - Workspace: {workspace_dir}")
+    print(f"  - Workspace logs: {workspace_logs_dir}")
+    
+    # Track processed files to avoid duplicates
+    processed_files = set()
+    
+    # Track if any message has been sent to the client
+    message_sent = False
+    
+    try:
+        # Initial scan of existing files
+        print(f"==DEBUG== Performing initial scan for job {job_id}")
+        
+        # Create necessary directories if they don't exist
+        for directory in [workspace_dir, workspace_logs_dir]:
+            try:
+                os.makedirs(directory, exist_ok=True)
+                print(f"==DEBUG== Created directory: {directory}")
+            except Exception as e:
+                print(f"==DEBUG== Error creating directory {directory}: {str(e)}")
+        
+        # Main monitoring loop
+        check_count = 0
+        while job_id in manager.active_connections:
+            try:
+                check_count += 1
+                # Check for new logs in workspace logs directory
+                new_logs = []
+                
+                # First check the workspace logs directory
+                if os.path.exists(workspace_logs_dir):
+                    if check_count % 10 == 0:  # Reduce log spam
+                        print(f"==DEBUG== Checking {workspace_logs_dir} for new files")
+                    for filename in os.listdir(workspace_logs_dir):
+                        if filename.endswith(".json"):
+                            filepath = os.path.join(workspace_logs_dir, filename)
+                            if filepath not in processed_files:
+                                print(f"==DEBUG== Found new log file: {filepath}")
+                                new_logs.append(filepath)
+                
+                # Also check the main logs directory
+                if os.path.exists(logs_dir):
+                    if check_count % 10 == 0:  # Reduce log spam
+                        print(f"==DEBUG== Checking {logs_dir} for new files")
+                    for filename in os.listdir(logs_dir):
+                        if filename.endswith(".json") and job_id in filename:
+                            filepath = os.path.join(logs_dir, filename)
+                            if filepath not in processed_files:
+                                print(f"==DEBUG== Found new log file: {filepath}")
+                                new_logs.append(filepath)
+                
+                # Process any new log files
+                for filepath in new_logs:
+                    try:
+                        print(f"==DEBUG== Processing log file: {filepath}")
+                        with open(filepath, 'r') as f:
+                            log_data = json.load(f)
+                        
+                        # Extract content and role from the log data
+                        role = log_data.get('role', 'system')
+                        content = log_data.get('content', '')
+                        
+                        # For API response log files with a different structure
+                        if not content and 'response' in log_data:
+                            print(f"==DEBUG== Found API response log file: {filepath}")
+                            
+                            try:
+                                response = log_data['response']
+                                if isinstance(response, dict) and 'choices' in response:
+                                    choices = response['choices']
+                                    print(f"==DEBUG== Found {len(choices) if choices else 0} choices in response")
+                                    
+                                    if choices and isinstance(choices, list) and len(choices) > 0:
+                                        choice = choices[0]
+                                        print(f"==DEBUG== Examining first choice")
+                                        
+                                        if isinstance(choice, dict) and 'message' in choice:
+                                            message = choice['message']
+                                            print(f"==DEBUG== Found message in choice")
+                                            
+                                            if isinstance(message, dict) and 'content' in message:
+                                                content = message['content']
+                                                print(f"==DEBUG== Extracted content from message ({len(content)} chars)")
+                                
+                                # Use the role from the log file if available
+                                if role == 'system' and 'role' in log_data:
+                                    role = log_data['role']
+                                    print(f"==DEBUG== Using role from log file: {role}")
+                            except Exception as e:
+                                print(f"==DEBUG== Error extracting content from API response: {str(e)}")
+                                import traceback
+                                traceback.print_exc()
+                        
+                        if content:
+                            print(f"==DEBUG== Sending content update for role: {role}")
+                            # Send the update with the extracted content
+                            update_success = await manager.send_update(job_id, {
+                                "status": "update",
+                                "role": role,
+                                "content": content,
+                                "message": f"Received message from {role}",
+                                "timestamp": time.time()
+                            })
+                            
+                            if update_success:
+                                print(f"==DEBUG== Update sent successfully for {filepath}")
+                                message_sent = True
+                            else:
+                                print(f"==DEBUG== Failed to send update for {filepath} - WebSocket might be disconnected")
+                        else:
+                            print(f"==DEBUG== No content found in {filepath}")
+                        
+                        # Mark as processed regardless of content
+                        processed_files.add(filepath)
+                        
+                    except json.JSONDecodeError as e:
+                        print(f"==DEBUG== JSON decode error for {filepath}: {str(e)}")
+                    except Exception as e:
+                        print(f"==DEBUG== Error processing log file {filepath}: {str(e)}")
+                
+                # Check for output.json in the workspace directory
+                output_path = os.path.join(workspace_dir, "output.json")
+                if os.path.exists(output_path) and output_path not in processed_files:
+                    try:
+                        print(f"==DEBUG== Processing output file: {output_path}")
+                        with open(output_path, 'r') as f:
+                            output_data = json.load(f)
+                        
+                        # If output_data is a list, send each item as a separate message
+                        if isinstance(output_data, list):
+                            for item in output_data:
+                                role = item.get('role', 'system')
+                                content = item.get('content', '')
+                                
+                                if content:
+                                    print(f"==DEBUG== Sending output content update for role: {role}")
+                                    update_success = await manager.send_update(job_id, {
+                                        "status": "update",
+                                        "role": role,
+                                        "content": content,
+                                        "message": f"Received message from {role}",
+                                        "timestamp": time.time()
+                                    })
+                                    
+                                    if update_success:
+                                        message_sent = True
+                        
+                        # Mark as processed
+                        processed_files.add(output_path)
+                        
+                    except json.JSONDecodeError as e:
+                        print(f"==DEBUG== JSON decode error for {output_path}: {str(e)}")
+                    except Exception as e:
+                        print(f"==DEBUG== Error processing output file: {str(e)}")
+                
+                # Send a status update every 5 seconds if no messages have been sent
+                if not message_sent and check_count % 10 == 0:
+                    try:
+                        print(f"==DEBUG== Sending status update for job {job_id}")
+                        await manager.send_update(job_id, {
+                            "status": "status",
+                            "message": f"Monitoring files for job {job_id}...",
+                            "timestamp": time.time()
+                        })
+                    except Exception as e:
+                        print(f"==DEBUG== Error sending status update: {str(e)}")
+                
+                # Sleep for a shorter time before checking again (0.5 seconds instead of 1)
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                print(f"==DEBUG== Error in monitoring loop for {job_id}: {str(e)}")
+                await asyncio.sleep(2)  # Longer sleep on error
+    
+    except asyncio.CancelledError:
+        print(f"==DEBUG== File monitoring task for job {job_id} was cancelled")
+    except Exception as e:
+        print(f"==DEBUG== Unexpected error in file monitoring for {job_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 @app.post("/api/run_metagpt_default")
 async def run_metagpt_default(background_tasks: BackgroundTasks):
@@ -637,8 +832,7 @@ async def get_output():
                     
             except Exception as e:
                 print(f"Error processing log file {log_file}: {str(e)}")
-                continue
-        
+    
         if not result:
             return {"status": "error", "error": "No valid response content found in logs"}
             
@@ -1489,110 +1683,346 @@ async def list_workflows():
         # Return empty list instead of hardcoded fallback
         return []
 
+# WebSocket endpoint for job-specific connections
 @app.websocket("/ws/{job_id}")
 async def websocket_endpoint(websocket: WebSocket, job_id: str):
-    print(f"==DEBUG== WebSocket connection attempt for job {job_id}")
-    
-    # Add better logging for the connection process
-    print(f"==DEBUG== Active connections before connecting: {list(manager.active_connections.keys())}")
-    
+    """WebSocket endpoint for real-time communication with a specific job"""
     try:
-        await manager.connect(websocket, job_id)
-        print(f"==DEBUG== WebSocket connected and registered for job: {job_id}")
-        print(f"==DEBUG== Active connections after connecting: {list(manager.active_connections.keys())}")
+        print(f"==DEBUG== WebSocket connection attempt for job {job_id}")
         
-        # Send initial connection confirmation
-        try:
-            await websocket.send_json({"status": "connected", "message": "WebSocket connection established"})
-            print(f"==DEBUG== Sent initial connection confirmation to {job_id}")
-        except Exception as e:
-            print(f"==DEBUG== Error sending initial confirmation: {str(e)}")
+        # Accept the connection
+        await websocket.accept()
+        print(f"==DEBUG== WebSocket connection accepted for job {job_id}")
         
-        # Start ping task to keep connection alive
-        ping_task = None
-        try:
-            async def send_periodic_pings():
-                """Send periodic pings to keep WebSocket connection alive"""
-                try:
-                    while True:
-                        if job_id not in manager.active_connections:
-                            print(f"==DEBUG== Stopping ping task - connection for {job_id} closed")
-                            break
-                            
-                        try:
-                            await websocket.send_json({"status": "ping", "timestamp": time.time()})
-                            print(f"==DEBUG== Sent ping to {job_id}")
-                        except Exception as e:
-                            print(f"==DEBUG== Error sending ping to {job_id}: {str(e)}")
-                            break
-                            
-                        await asyncio.sleep(15)  # Send ping every 15 seconds
-                except asyncio.CancelledError:
-                    print(f"==DEBUG== Ping task for {job_id} was cancelled")
-                except Exception as e:
-                    print(f"==DEBUG== Error in ping task for {job_id}: {str(e)}")
-            
-            # Start ping task
-            ping_task = asyncio.create_task(send_periodic_pings())
-            print(f"==DEBUG== Started ping task for {job_id}")
-        except Exception as e:
-            print(f"==DEBUG== Error starting ping task: {str(e)}")
+        # Add client to connection manager
+        manager.connect(job_id, websocket)
         
-        # Start a monitor task for this job immediately - this will run in background
-        monitor_task = None
-        try:
-            # Generate workspace ID based on job ID
-            workspace_id = f"workspace_{job_id}"
-            print(f"==DEBUG== Starting file monitoring for job {job_id}, workspace {workspace_id}")
-            monitor_task = asyncio.create_task(monitor_workspace_files(job_id, workspace_id))
-        except Exception as e:
-            print(f"==DEBUG== Error starting monitor task: {str(e)}")
+        # Send initial message
+        await websocket.send_json({
+            "role": "system",
+            "content": f"Connected to job {job_id}"
+        })
         
-        # Main WebSocket message processing loop
+        # Process incoming messages
         try:
             while True:
-                # Wait for any message from the client
-                try:
-                    data = await websocket.receive_json()
-                    print(f"==DEBUG== Received message from job {job_id}: {data}")
-                    
-                    # Handle ping messages to keep connection alive
-                    if data.get("type") == "ping" or data.get("action") == "ping":
-                        await websocket.send_json({"status": "ping", "message": "pong"})
-                        print(f"==DEBUG== Sent ping response to {job_id}")
-                        
-                except WebSocketDisconnect:
-                    print(f"==DEBUG== WebSocket disconnected during receive for job {job_id}")
-                    break
-                except Exception as e:
-                    print(f"==DEBUG== Error receiving message from job {job_id}: {str(e)}")
-                    # Log but continue - don't break the loop for message errors
-                    continue
-                    
-        except Exception as e:
-            print(f"==DEBUG== Error in WebSocket processing loop for job {job_id}: {str(e)}")
+                # Receive message from client
+                data = await websocket.receive_text()
+                print(f"==DEBUG== Received message from WebSocket for job {job_id}: {data[:100]}")
                 
-    except WebSocketDisconnect:
-        print(f"==DEBUG== WebSocket disconnected for job {job_id}")
-        manager.disconnect(job_id)
+                try:
+                    # Parse message as JSON
+                    message = json.loads(data)
+                    role = message.get("role", "user")
+                    content = message.get("content", "")
+                    
+                    # Send acknowledgment back to client
+                    await websocket.send_json({
+                        "role": "system",
+                        "status": "received",
+                        "message": f"Received: {content[:50]}..." if len(content) > 50 else f"Received: {content}"
+                    })
+                    
+                    # For now, just echo back the message (in a real app, this would trigger MetaGPT)
+                    await asyncio.sleep(1)  # Simulate processing
+                    await websocket.send_json({
+                        "role": "assistant",
+                        "content": f"You said: {content}"
+                    })
+                    
+                except json.JSONDecodeError:
+                    print(f"==ERROR== Invalid JSON received: {data[:100]}")
+                    await websocket.send_json({
+                        "role": "system",
+                        "status": "error",
+                        "error": "Invalid JSON message"
+                    })
+                
+        except WebSocketDisconnect:
+            print(f"==DEBUG== WebSocket disconnected for job {job_id}")
+        except Exception as e:
+            print(f"==ERROR== WebSocket error for job {job_id}: {str(e)}")
+            traceback.print_exc()
+            try:
+                await websocket.send_json({
+                    "role": "system",
+                    "status": "error",
+                    "error": f"Internal error: {str(e)}"
+                })
+            except:
+                pass
+    
     except Exception as e:
-        print(f"==DEBUG== WebSocket error for job {job_id}: {str(e)}")
-        import traceback
+        print(f"==ERROR== Could not establish WebSocket connection for job {job_id}: {str(e)}")
         traceback.print_exc()
-        manager.disconnect(job_id)
+    
     finally:
-        # Cancel any running tasks
-        if 'ping_task' in locals() and ping_task is not None:
-            ping_task.cancel()
-            print(f"==DEBUG== Cancelled ping task for {job_id}")
-            
-        if 'monitor_task' in locals() and monitor_task is not None:
-            monitor_task.cancel()
-            print(f"==DEBUG== Cancelled monitor task for {job_id}")
-            
-        # Make sure we always disconnect if the loop exits
         print(f"==DEBUG== WebSocket connection ended for job {job_id}")
         manager.disconnect(job_id)
+
+# New WebSocket endpoint for initial connections without job_id
+@app.websocket("/ws")
+async def websocket_endpoint_initial(websocket: WebSocket):
+    """WebSocket endpoint for initial connection before job creation"""
+    # Generate a temporary ID for this connection
+    temp_id = f"temp_{int(time.time())}_{os.urandom(4).hex()}"
+    
+    try:
+        print(f"==DEBUG== Initial WebSocket connection attempt (temp_id: {temp_id})")
+        
+        # Accept the connection
+        await websocket.accept()
+        print(f"==DEBUG== Initial WebSocket connection accepted (temp_id: {temp_id})")
+        
+        # Add client to connection manager with temporary ID
+        manager.connect(temp_id, websocket)
+        
+        # Send initial connection message
+        await websocket.send_json({
+            "type": "connection_established",
+            "message": "Connected to MetaGPT visualization server"
+        })
+        
+        # Process incoming messages
+        try:
+            while True:
+                # Receive message from client
+                data = await websocket.receive_text()
+                print(f"==DEBUG== Received message from initial WebSocket: {data[:100]}")
+                
+                try:
+                    # Parse message as JSON
+                    message = json.loads(data)
+                    message_type = message.get("type", "")
+                    
+                    # Handle different message types
+                    if message_type == "ping":
+                        await websocket.send_json({"type": "pong"})
+                    elif message_type == "start_job":
+                        # Client wants to start a new job
+                        prompt = message.get("prompt", "")
+                        workflow = message.get("workflow_file", "")
+                        config_file = message.get("config_file", "")
+                        api_key = message.get("api_key", "")  # Get API key from message
+                        
+                        # Create a new job
+                        prompt_request = PromptRequest(prompt=prompt, workflow_file=workflow, config_file=config_file)
+                        
+                        # Create a new job with API key if provided
+                        if api_key:
+                            # We need to call run_with_config instead
+                            response = await run_with_config_internal(
+                                prompt=prompt,
+                                workflow_file=workflow,
+                                config_file=config_file,
+                                api_key=api_key
+                            )
+                        else:
+                            # Use the standard method without API key
+                            response = await run_metagpt_internal(prompt_request)
+                        
+                        # Send job creation response
+                        await websocket.send_json({
+                            "type": "job_created",
+                            "job_id": response["job_id"],
+                            "status": response["status"],
+                            "message": response["message"]
+                        })
+                        
+                        # Update the connection's job_id
+                        manager.disconnect(temp_id)
+                        manager.connect(response["job_id"], websocket)
+                        
+                        print(f"==DEBUG== Updated WebSocket connection from temp_id {temp_id} to job_id {response['job_id']}")
+                    else:
+                        print(f"==DEBUG== Unknown message type: {message_type}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Unknown message type: {message_type}"
+                        })
+                    
+                except json.JSONDecodeError:
+                    print(f"==ERROR== Invalid JSON received: {data[:100]}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Invalid JSON message"
+                    })
+                except Exception as e:
+                    print(f"==ERROR== Error processing message: {str(e)}")
+                    traceback.print_exc()
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Error processing message: {str(e)}"
+                    })
+                
+        except WebSocketDisconnect:
+            print(f"==DEBUG== Initial WebSocket disconnected (temp_id: {temp_id})")
+        except Exception as e:
+            print(f"==ERROR== Initial WebSocket error: {str(e)}")
+            traceback.print_exc()
+            try:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Internal error: {str(e)}"
+                })
+            except:
+                pass
+    
+    except Exception as e:
+        print(f"==ERROR== Could not establish initial WebSocket connection: {str(e)}")
+        traceback.print_exc()
+    
+    finally:
+        print(f"==DEBUG== Initial WebSocket connection ended (temp_id: {temp_id})")
+        manager.disconnect(temp_id)
+
+# Internal version of run_metagpt that can be called from the WebSocket handler
+async def run_metagpt_internal(prompt_request: PromptRequest):
+    """Internal version of run_metagpt that can be called directly"""
+    # Generate a unique job ID
+    job_id = f"job_{int(time.time())}_{os.urandom(4).hex()}"
+    
+    # Create job directory in logs
+    job_dir = os.path.join(logs_dir, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    
+    # If no workflow file is specified, use the default collaborative workflow
+    if not prompt_request.workflow_file:
+        default_workflow_path = os.path.join(root_dir, "workflows", "collaborative_workflow.yml")
+        if os.path.exists(default_workflow_path):
+            prompt_request.workflow_file = "collaborative_workflow.yml"
+            print(f"Using default workflow: {prompt_request.workflow_file}")
+    
+    # Create initial job status
+    job_status = {
+        "id": job_id,
+        "status": "pending",
+        "created_at": datetime.now().isoformat(),
+        "prompt": prompt_request.prompt,
+        "workflow": prompt_request.workflow_file,
+        "completed_models": [],
+        "results": {}
+    }
+    
+    # Save job status
+    job_file = os.path.join(logs_dir, f"{job_id}_status.json")
+    with open(job_file, "w") as f:
+        json.dump(job_status, f, indent=2)
+    
+    # Start file watcher for this job
+    event_handler = LogFileHandler(job_id)
+    observer = Observer()
+    observer.schedule(event_handler, logs_dir, recursive=True)
+    observer.schedule(event_handler, workspace_dir, recursive=True)
+    observer.start()
+    
+    # Process the request in background
+    asyncio.create_task(
+        process_metagpt_request(
+            job_id=job_id,
+            prompt_request=prompt_request,
+            job_file=job_file,
+            observer=observer
+        )
+    )
+    
+    return {
+        "status": "accepted",
+        "job_id": job_id,
+        "message": "Job started. Connect to WebSocket for real-time updates."
+    }
+
+# Internal version of run_with_config that can be called from the WebSocket handler
+async def run_with_config_internal(prompt: str, workflow_file: Optional[str] = None, config_file: Optional[str] = None, api_key: Optional[str] = None):
+    """Internal version of run_with_config that can be called directly"""
+    # Build API request to metagpt-api
+    api_url = "http://metagpt-api:8000/api/run_metagpt"
+    payload = {
+        "prompt": prompt,
+    }
+    
+    # Add workflow_file if specified
+    if workflow_file:
+        payload["workflow_file"] = workflow_file
+    
+    # Add config_file if specified
+    if config_file:
+        payload["config_file"] = config_file
+    
+    # Add API key to payload if provided
+    if api_key:
+        payload["api_key"] = api_key
+        print("Using API key from request payload")
+    
+    # Generate a job ID for tracking
+    job_id = f"job_{int(time.time())}"
+    
+    # Start the background task
+    asyncio.create_task(run_job_in_background(api_url, payload, job_id))
+    
+    # Return immediately with the job ID for WebSocket connection
+    return {"status": "job_started", "job_id": job_id, "message": "Job started. Connect to WebSocket for updates."}
+
+@app.get("/api/status")
+async def api_status():
+    """Get API server status"""
+    try:
+        return {
+            "status": "running",
+            "time": datetime.now().isoformat(),
+            "version": "1.0.0",
+            "docker": in_docker
+        }
+    except Exception as e:
+        print(f"==ERROR== Error getting API status: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error getting API status: {str(e)}")
+
+@app.get("/api/active_jobs")
+async def list_active_jobs():
+    """List active MetaGPT jobs"""
+    try:
+        # In a real implementation, this would check for running jobs
+        # For now, we'll just return any recent log files as active jobs
+        logs = []
+        
+        # Check workspace directory for job logs
+        for root, _, files in os.walk(workspace_dir):
+            for file in files:
+                if file.endswith('.json'):
+                    job_id = os.path.splitext(file)[0]
+                    file_path = os.path.join(root, file)
+                    mtime = os.path.getmtime(file_path)
+                    logs.append({
+                        "id": job_id,
+                        "path": file_path,
+                        "modified": mtime,
+                        "time": datetime.fromtimestamp(mtime).isoformat()
+                    })
+        
+        # Also check logs directory
+        for root, _, files in os.walk(logs_dir):
+            for file in files:
+                if file.endswith('.json'):
+                    job_id = os.path.splitext(file)[0]
+                    file_path = os.path.join(root, file)
+                    mtime = os.path.getmtime(file_path)
+                    logs.append({
+                        "id": job_id,
+                        "path": file_path,
+                        "modified": mtime,
+                        "time": datetime.fromtimestamp(mtime).isoformat()
+                    })
+        
+        # Sort by modification time, newest first
+        logs.sort(key=lambda x: x["modified"], reverse=True)
+        
+        # For simplicity, just return the top 5 most recent logs
+        return logs[:5]
+    except Exception as e:
+        print(f"==ERROR== Error listing active jobs: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error listing active jobs: {str(e)}")
 
 if __name__ == "__main__":
     print(f"Visualization server running at http://localhost:8088")
